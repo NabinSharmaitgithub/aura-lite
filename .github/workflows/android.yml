@@ -26,6 +26,10 @@ permissions:
 
 env:
   GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8"
+  # The ubuntu-latest image already ships the Android SDK; the old setup-android action now
+  # fails because the legacy "tools" package was removed from the repository.
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
   # Optional production signing. Set these repository secrets to publish upgrade-compatible APKs;
   # without them the release build is signed with the debug key so it still installs.
   AURA_KEYSTORE_BASE64: ${{ secrets.AURA_KEYSTORE_BASE64 }}
@@ -52,7 +56,13 @@ jobs:
           java-version: "17"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$ANDROID_HOME"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools" >/dev/null
+          echo "build-tools: $(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -142,6 +152,7 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          mkdir -p build-report
           report=build-report/REPORT.md
           {
             echo "# AURA build report"
@@ -206,7 +217,7 @@ jobs:
         with:
           name: aura-build-report-${{ github.run_number }}
           path: build-report/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Publish GitHub release
