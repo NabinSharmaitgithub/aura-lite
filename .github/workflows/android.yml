@@ -92,9 +92,10 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${AURA_KEYSTORE_BASE64:-}" ]; then
-            echo "$AURA_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/aura-release.jks"
+            echo "$AURA_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/aura-release.p12"
             cat > keystore.properties <<EOF
-          storeFile=$RUNNER_TEMP/aura-release.jks
+          storeFile=$RUNNER_TEMP/aura-release.p12
+          storeType=PKCS12
           storePassword=$AURA_KEYSTORE_PASSWORD
           keyAlias=$AURA_KEY_ALIAS
           keyPassword=$AURA_KEY_PASSWORD

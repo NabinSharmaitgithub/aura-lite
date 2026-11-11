@@ -110,6 +110,7 @@ android {
                     if (props.exists()) {
                         val p = Properties().apply { props.inputStream().use { load(it) } }
                         storeFile = rootProject.file(p.getProperty("storeFile"))
+                        storeType = p.getProperty("storeType") ?: "JKS"
                         storePassword = p.getProperty("storePassword")
                         keyAlias = p.getProperty("keyAlias")
                         keyPassword = p.getProperty("keyPassword")

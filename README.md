@@ -148,8 +148,10 @@ the release build uses that production key. Otherwise it falls back to the debug
 APK still installs; the build report records which key signed it. None of those files or values are
 (or should be) committed.
 
-To enable production signing in CI, set the repository secrets `AURA_KEYSTORE_BASE64`,
-`AURA_KEYSTORE_PASSWORD`, `AURA_KEY_ALIAS`, and `AURA_KEY_PASSWORD`.
+In CI, production signing is provided by the repository secrets `AURA_KEYSTORE_BASE64` (a base64
+PKCS12 keystore), `AURA_KEYSTORE_PASSWORD`, `AURA_KEY_ALIAS`, and `AURA_KEY_PASSWORD`. The current
+key is self-signed as `AURA Release`, valid 2026–2056; the certificate fingerprints are printed in
+`build-report/certificates.txt` and in the release notes.
 
 Versioning: `versionCode = 534 + git commit count`, `versionName = 1.0.<versionCode>`, with
 `BuildConfig.AURA_BUILD_SHA` carrying the short SHA.
@@ -161,10 +163,12 @@ dispatch:
 
 1. rejects committed provider-key patterns with `git grep` (keys live only in
    EncryptedSharedPreferences at runtime);
-2. prepares optional production signing from repository secrets;
+2. prepares production signing from the repository secrets when set (PKCS12 keystore, base64),
+   otherwise the debug-key fallback signs the APK;
 3. assembles debug and release APKs with Gradle 8.11.1 + JDK 17, teeing both logs;
-4. writes `build-report/certificates.txt` with APK size, SHA-256 and the signing certificate
-   `Owner`, `SHA1` and `SHA256` fingerprints, plus `build-report/REPORT.md` (also the job summary);
+4. verifies every APK with `apksigner verify`, then writes `build-report/certificates.txt` with APK
+   size, SHA-256 and the signing certificate `V2 Signer` DN/SHA-256/SHA-1 fingerprints, plus
+   `build-report/REPORT.md` (also the job summary);
 5. always uploads `aura-apks-<run>` and `aura-build-report-<run>` artifacts, including failed logs;
 6. publishes a GitHub release with both APKs and the report on `v*` tags, or when a manual run sets
    `release = true` (tag defaults to `v<versionName>`).
