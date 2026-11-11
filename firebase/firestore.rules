@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// AURA — Firestore security rules
+//
+// Every AURA document lives under users/{uid}/. A signed-in user may read and write only their
+// own subtree, and only well-formed snapshot documents in the four known kinds with the
+// exact field set AURA writes. Anything else is denied by default.
+//
+// Deploy with: firebase deploy --only firestore:rules
+// Test with:   @firebase/rules-unit-testing (see firebase/README.md)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function validSnapshot() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['payload', 'updatedAt', 'deviceId', 'version'])
+        && d.payload is string
+        && d.payload.size() > 0
+        && d.payload.size() < 1048576          // 1 MiB snapshot cap, keeps free tier cheap
+        && d.updatedAt is int
+        && d.updatedAt > 0
+        && d.deviceId is string
+        && d.deviceId.size() > 0
+        && d.deviceId.size() <= 64
+        && d.version == 1;
+    }
+
+    // Snapshot documents produced by a sync run.
+    match /users/{uid}/snapshots/{kind} {
+      allow read: if isOwner(uid);
+      allow write: if isOwner(uid)
+        && kind in ['facts', 'plans', 'skills', 'sessions']
+        && validSnapshot();
+    }
+
+    // Account-scoped metadata (display name, device list). Only the owner may touch it.
+    match /users/{uid}/profile/{document=**} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // No top-level collections (users, admin, mail, jobs, …) are defined by AURA.
+    // Everything else falls through to the implicit deny.
+  }
+}

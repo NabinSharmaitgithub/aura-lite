@@ -122,6 +122,20 @@ class LearningsStore @Inject constructor(@ApplicationContext context: Context) {
         write(facts(), emptyList())
     }
 
+    /** Raw document for the opt-in cloud sync; never logged or uploaded without consent. */
+    fun exportRaw(): String? = readRoot()?.toString()
+
+    /** Replaces the local document wholesale from a cloud snapshot. */
+    @Synchronized
+    fun importRaw(text: String): Boolean = runCatching {
+        val root = json.parseToJsonElement(text).jsonObject
+        require(root.containsKey("facts") || root.containsKey("corrections")) { "not a learnings snapshot" }
+        val temp = File(file.parentFile, "learnings.json.tmp")
+        temp.writeText(root.toString())
+        if (!temp.renameTo(file)) temp.copyTo(file, overwrite = true).also { temp.delete() }
+        true
+    }.getOrDefault(false)
+
     private fun readRoot(): JsonObject? {
         if (!file.exists()) return null
         return runCatching {

@@ -73,6 +73,12 @@ The README is the map of the implementation; those six files remain the authorit
 │   ├── build.gradle.kts
 │   ├── consumer-rules.pro
 │   └── src/main/kotlin/com/aura/mcp/
+├── firebase/                               OPTIONAL opt-in backend: rules, indexes, functions, README
+│   ├── firestore.rules                     owner-only rules, snapshot validation, default deny
+│   ├── storage.rules                       pre-scoped per-user area (unused today)
+│   ├── firebase.json, .firebaserc, firestore.indexes.json
+│   ├── functions/                           optional authenticated Cloud Function (Blaze)
+│   └── README.md                           deploy + verify checklist
 └── .github/workflows/android.yml           CI: secret scan, debug + release, artifacts, releases
 ```
 
@@ -87,6 +93,7 @@ The README is the map of the implementation; those six files remain the authorit
 | `bridge/` | `AuraDeviceBridge` — implements the MCP `DeviceBridge` against Android APIs |
 | `browser/` | Dedicated WebView `BrowserActivity` + JS-backed controller |
 | `data/` | Room (`db/`), DataStore settings, secure keys, session JSONL, learnings, skills, eval catalog, restricted apps |
+| `firebase/` | Optional opt-in Firebase: Auth (email/Google), Firestore sync, FCM, Remote Config, Crashlytics, Analytics wrappers |
 | `di/` | Hilt module wiring singletons and the in-process MCP client |
 | `ime/` | Optional AURA keyboard (voice dictation surface) |
 | `notifications/` | Notification listener, channels, approval action receiver |
@@ -151,7 +158,9 @@ APK still installs; the build report records which key signed it. None of those 
 In CI, production signing is provided by the repository secrets `AURA_KEYSTORE_BASE64` (a base64
 PKCS12 keystore), `AURA_KEYSTORE_PASSWORD`, `AURA_KEY_ALIAS`, and `AURA_KEY_PASSWORD`. The current
 key is self-signed as `AURA Release`, valid 2026–2056; the certificate fingerprints are printed in
-`build-report/certificates.txt` and in the release notes.
+`build-report/certificates.txt` and in the release notes. Firebase wiring is optional too: set
+`GOOGLE_SERVICES_JSON_BASE64` to your base64'd `app/google-services.json` and CI applies the Google
+Services + Crashlytics plugins; without it the build is offline-only by design.
 
 Versioning: `versionCode = 534 + git commit count`, `versionName = 1.0.<versionCode>`, with
 `BuildConfig.AURA_BUILD_SHA` carrying the short SHA.
@@ -165,12 +174,14 @@ dispatch:
    EncryptedSharedPreferences at runtime);
 2. prepares production signing from the repository secrets when set (PKCS12 keystore, base64),
    otherwise the debug-key fallback signs the APK;
-3. assembles debug and release APKs with Gradle 8.11.1 + JDK 17, teeing both logs;
-4. verifies every APK with `apksigner verify`, then writes `build-report/certificates.txt` with APK
+3. restores `app/google-services.json` from `GOOGLE_SERVICES_JSON_BASE64` when the secret is set
+   (Firebase compiled and wired in); otherwise the build is intentionally offline-only;
+4. assembles debug and release APKs with Gradle 8.11.1 + JDK 17, teeing both logs;
+5. verifies every APK with `apksigner verify`, then writes `build-report/certificates.txt` with APK
    size, SHA-256 and the signing certificate `V2 Signer` DN/SHA-256/SHA-1 fingerprints, plus
    `build-report/REPORT.md` (also the job summary);
-5. always uploads `aura-apks-<run>` and `aura-build-report-<run>` artifacts, including failed logs;
-6. publishes a GitHub release with both APKs and the report on `v*` tags, or when a manual run sets
+6. always uploads `aura-apks-<run>` and `aura-build-report-<run>` artifacts, including failed logs;
+7. publishes a GitHub release with both APKs and the report on `v*` tags, or when a manual run sets
    `release = true` (tag defaults to `v<versionName>`).
 
 ---
@@ -244,6 +255,7 @@ same trace the agent produced.
 | JSON (`files/skills/`) | `data/skills/SkillsRepository.kt` | user skill packs, seeded from `assets/skills/index.json` |
 | JSONL (`files/mcp/audit.jsonl`) | `mcp-server/.../audit/McpAuditLogger.kt` | MCP tool calls, pruned by retention |
 | PNG (`files/screen/current.png`) | `accessibility/ScreenCaptureManager.kt` | one transient screenshot, overwritten per capture |
+| Firestore (`users/{uid}/snapshots/*`) | `firebase/FirebaseSync.kt` | opt-in only; facts/plans/skills two-way last-write-wins, sessions push-only; see `firebase/README.md` |
 
 ### Security and privacy
 
@@ -252,7 +264,8 @@ same trace the agent produced.
 - LAN MCP requires explicit pairing, a pinned self-signed TLS identity, a hashed device token and
   per-device revocation.
 - Audit records never include API keys or pairing secrets.
-- No telemetry, no crash SDK, no remote config, no account system.
+- Offline-first by default: no telemetry, crash SDK, remote config or account system unless the user
+  links Firebase (Settings → Firebase; off by default — see `firebase/README.md`).
 - Restricted-app rules are enforced before actions run.
 
 ### Design system
@@ -294,11 +307,29 @@ bar.
 - Direct phone calls and direct SMS sending are disabled because `CALL_PHONE` and `SEND_SMS` are not
   declared; the agent opens the dialer or the SMS compose screen instead.
 - `browser_upload` returns an explicit unsupported/handoff result rather than faking a file chooser.
+- Firebase is an opt-in layer, not a cloud conversion: the app ships working offline without it;
+  `app/google-services.json` locally (or the base64 secret `GOOGLE_SERVICES_JSON_BASE64` in CI)
+  decides whether Firebase is compiled in, and every Firebase call site no-ops without it. Sync is
+  two-way last-write-wins for facts/plans/skills, sessions are push-only, and the Firestore rules
+  (`firebase/firestore.rules`) restrict each user to their own snapshot documents.
 - Browser tabs are represented by the current URL history (single WebView), not a multi-tab model.
 - Fonts use `SansSerif`/`Monospace` system families until TTFs are added to `res/font` and wired in
   `AuraFonts`.
 - On-device verification of the memory gates (idle ≤250 MB PSS, run ≤400 MB, cold start ≤1.8 s) and
   the 20-task suite requires a physical device; CI only proves it builds.
+
+---
+
+## Firebase (optional, opt-in)
+
+AURA ships offline. Firebase is compiled in only when `app/google-services.json` exists (or CI
+restores it from `GOOGLE_SERVICES_JSON_BASE64`); without it the Google Services plugin is not
+applied and every Firebase call site no-ops. Users opt in under Settings → Firebase: email/Google
+sign-in, two-way sync of facts/plans/skills (last write wins), push-only session summaries +
+hash-only audit log, FCM token display, and off-by-default Analytics and Crashlytics toggles.
+`firebase/README.md` lists the console setup, deploys the rules
+(`firebase/firestore.rules`, `firebase/storage.rules`), and documents the data model, conflict
+policy and privacy summary. Deploy by the user, never by the build.
 
 ---
 
@@ -312,3 +343,9 @@ bar.
 - [ ] MCP pairing works from a second device; revoked devices are rejected.
 - [ ] With models/KWS absent, wake word and icon detection degrade cleanly rather than crash.
 - [ ] Idle/run PSS and cold start meet the TRD §15 gates on a 4 GB device.
+- [ ] Without `app/google-services.json` the build succeeds and Settings → Firebase reports
+  "Not configured on this build"; nothing is sent.
+- [ ] With a linked account: sign-in works (email + Google), "Sync now" pushes facts/plans/skills,
+  a second signed-in device pulls them, and rules reject cross-user reads.
+- [ ] Session sync stays off until the user enables it; exports contain no prompts, only summaries.
+- [ ] Firestore/Storage rules deployed and `firebase deploy --only firestore:rules,storage:rules` exits 0.

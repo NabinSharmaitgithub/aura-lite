@@ -14,6 +14,7 @@ object Routes {
     const val AGENT_COMPANION = "agent/companion"
     const val AGENT_VOICE = "agent/voice"
 
+    const val SETTINGS_FIREBASE = "settings/firebase"
     const val SETTINGS_TAVILY = "settings/tavily"
     const val SETTINGS_TRUSTED_DEVICES = "settings/trusted_devices"
     const val SETTINGS_RESTRICTED_APPS = "settings/restricted_apps"
@@ -42,6 +43,7 @@ object Routes {
         AGENT_MEMORY to "Memory",
         AGENT_COMPANION to "Companion",
         AGENT_VOICE to "Voice",
+        SETTINGS_FIREBASE to "Firebase",
         SETTINGS_TAVILY to "Search key",
         SETTINGS_TRUSTED_DEVICES to "Trusted devices",
         SETTINGS_RESTRICTED_APPS to "Restricted apps",

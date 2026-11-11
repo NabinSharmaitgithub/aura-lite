@@ -12,7 +12,9 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * Typed wrapper over SharedPreferences("aura_settings").
  *
- * No kill-switch, version-gate, auth, sync or firebase keys exist in this app by design.
+ * The app is offline-first by default. The only network dependencies are the user-configured LLM
+ * endpoint and the optional, user-linked Firebase backend (sync, auth and diagnostics); both are
+ * strictly opt-in and off until the user switches them on.
  */
 @Singleton
 class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
@@ -54,6 +56,10 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
         hookInstructions = hookInstructions,
         maxSteps = maxSteps,
         customEndpointJson = customEndpointJson,
+        firebaseEnabled = firebaseEnabled,
+        firebaseAnalyticsEnabled = firebaseAnalyticsEnabled,
+        firebaseCrashlyticsEnabled = firebaseCrashlyticsEnabled,
+        firebaseSessionSyncEnabled = firebaseSessionSyncEnabled,
     )
 
     var onboardingComplete: Boolean
@@ -235,6 +241,57 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
             bump()
         }
 
+    /** User linked a Firebase account; sync runs only while this is also true. */
+    var firebaseEnabled: Boolean
+        get() = prefs.getBoolean("firebase_enabled", false)
+        set(value) {
+            prefs.edit().putBoolean("firebase_enabled", value).apply()
+            bump()
+        }
+
+    var firebaseAnalyticsEnabled: Boolean
+        get() = prefs.getBoolean("firebase_analytics_enabled", false)
+        set(value) {
+            prefs.edit().putBoolean("firebase_analytics_enabled", value).apply()
+            bump()
+        }
+
+    var firebaseCrashlyticsEnabled: Boolean
+        get() = prefs.getBoolean("firebase_crashlytics_enabled", false)
+        set(value) {
+            prefs.edit().putBoolean("firebase_crashlytics_enabled", value).apply()
+            bump()
+        }
+
+    /** Session summaries and the hash-only MCP audit log sync to the cloud only on opt-in. */
+    var firebaseSessionSyncEnabled: Boolean
+        get() = prefs.getBoolean("firebase_session_sync_enabled", false)
+        set(value) {
+            prefs.edit().putBoolean("firebase_session_sync_enabled", value).apply()
+            bump()
+        }
+
+    var firebaseFcmToken: String
+        get() = prefs.getString("firebase_fcm_token", "") ?: ""
+        set(value) {
+            prefs.edit().putString("firebase_fcm_token", value).apply()
+            bump()
+        }
+
+    /** Stable anonymous id for this device, not tied to any account. */
+    fun deviceId(): String {
+        prefs.getString("firebase_device_id", null)?.let { return it }
+        val created = java.util.UUID.randomUUID().toString()
+        prefs.edit().putString("firebase_device_id", created).apply()
+        return created
+    }
+
+    fun lastSyncAt(kind: String): Long = prefs.getLong("firebase_sync_$kind", 0L)
+
+    fun setLastSyncAt(kind: String, timestamp: Long) {
+        prefs.edit().putLong("firebase_sync_$kind", timestamp).apply()
+    }
+
     /** Destructive only from Settings → Privacy, never implicitly. */
     fun resetOnboarding() {
         prefs.edit()
@@ -282,4 +339,8 @@ data class SettingsSnapshot(
     val hookInstructions: String,
     val maxSteps: Int,
     val customEndpointJson: String,
+    val firebaseEnabled: Boolean = false,
+    val firebaseAnalyticsEnabled: Boolean = false,
+    val firebaseCrashlyticsEnabled: Boolean = false,
+    val firebaseSessionSyncEnabled: Boolean = false,
 )

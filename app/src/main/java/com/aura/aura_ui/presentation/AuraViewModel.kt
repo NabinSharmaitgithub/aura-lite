@@ -53,6 +53,10 @@ import com.aura.mcp.tools.ToolCatalog
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import com.aura.aura_ui.firebase.FirebaseAuthManager
+import com.aura.aura_ui.firebase.FirebaseDiagnostics
+import com.aura.aura_ui.firebase.FirebaseOptional
+import com.aura.aura_ui.firebase.FirebaseSync
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -104,6 +108,9 @@ class AuraViewModel @Inject constructor(
     private val capture: ScreenCaptureManager,
     private val appResolver: AppResolver,
     private val search: WebSearchClient,
+    private val firebaseAuth: FirebaseAuthManager,
+    private val firebaseSync: FirebaseSync,
+    private val diagnostics: FirebaseDiagnostics,
 ) : ViewModel() {
 
     val settings: StateFlow<SettingsSnapshot> = prefs.revision
@@ -125,6 +132,70 @@ class AuraViewModel @Inject constructor(
     val reminders: StateFlow<List<ReminderEntity>> = reminderDao.observePending()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    fun firebaseSignIn(email: String, password: String) = viewModelScope.launch {
+        if (_firebaseBusy.value) return@launch
+        _firebaseBusy.value = true
+        val result = withContext(Dispatchers.IO) { firebaseAuth.signInWithEmail(email, password) }
+        _firebaseBusy.value = false
+        result.onSuccess { user ->
+            prefs.firebaseEnabled = true
+            _firebaseEmail.value = user.email
+            _firebaseMessage.value = "Linked ${user.email ?: "your account"}. Sync is ready."
+        }.onFailure { _firebaseMessage.value = "Sign-in failed: ${it.message}" }
+    }
+
+    fun firebaseCreateAccount(email: String, password: String) = viewModelScope.launch {
+        if (_firebaseBusy.value) return@launch
+        _firebaseBusy.value = true
+        val result = withContext(Dispatchers.IO) { firebaseAuth.createAccountWithEmail(email, password) }
+        _firebaseBusy.value = false
+        result.onSuccess { user ->
+            prefs.firebaseEnabled = true
+            _firebaseEmail.value = user.email
+            _firebaseMessage.value = "Account created. Sync is ready."
+        }.onFailure { _firebaseMessage.value = "Account creation failed: ${it.message}" }
+    }
+
+    fun firebaseSignInWithGoogle(idToken: String) = viewModelScope.launch {
+        if (_firebaseBusy.value) return@launch
+        _firebaseBusy.value = true
+        val result = withContext(Dispatchers.IO) { firebaseAuth.signInWithGoogle(idToken) }
+        _firebaseBusy.value = false
+        result.onSuccess { user ->
+            prefs.firebaseEnabled = true
+            _firebaseEmail.value = user.email
+            _firebaseMessage.value = "Linked Google account. Sync is ready."
+        }.onFailure { _firebaseMessage.value = "Google sign-in failed: ${it.message}" }
+    }
+
+    fun firebaseSignOut() {
+        firebaseAuth.signOut()
+        prefs.firebaseEnabled = false
+        _firebaseEmail.value = null
+        _firebaseMessage.value = "Signed out. AURA is fully offline again."
+    }
+
+    fun firebaseSyncNow() = viewModelScope.launch {
+        if (_firebaseBusy.value) return@launch
+        _firebaseBusy.value = true
+        val report = withContext(Dispatchers.IO) { firebaseSync.syncNow() }
+        _firebaseBusy.value = false
+        _firebaseMessage.value = report.detail
+        diagnostics.logSync(report.pushed.size, report.pulled.size, report.skipped.size + report.errors.size)
+    }
+
+    fun setFirebaseToggle(kind: String, enabled: Boolean) {
+        prefs.apply {
+            when (kind) {
+                "analytics" -> firebaseAnalyticsEnabled = enabled
+                "crashlytics" -> firebaseCrashlyticsEnabled = enabled
+                "sessions" -> firebaseSessionSyncEnabled = enabled
+                else -> Unit
+            }
+        }
+        if (kind == "crashlytics") diagnostics.applyCrashToggle()
+    }
+
     private val _mcpHealth = MutableStateFlow(McpServerHealth())
     val mcpHealth: StateFlow<McpServerHealth> = _mcpHealth.asStateFlow()
 
@@ -133,6 +204,17 @@ class AuraViewModel @Inject constructor(
 
     private val _audit = MutableStateFlow<List<String>>(emptyList())
     val auditLines: StateFlow<List<String>> = _audit.asStateFlow()
+
+    private val _firebaseBusy = MutableStateFlow(false)
+    val firebaseBusy: StateFlow<Boolean> = _firebaseBusy.asStateFlow()
+
+    private val _firebaseMessage = MutableStateFlow("")
+    val firebaseMessage: StateFlow<String> = _firebaseMessage.asStateFlow()
+
+    private val _firebaseEmail = MutableStateFlow(firebaseAuth.email)
+    val firebaseEmail: StateFlow<String?> = _firebaseEmail.asStateFlow()
+
+    val firebaseAvailable: Boolean get() = FirebaseOptional.available(context)
 
     private val _models = MutableStateFlow<List<ModelInfo>>(emptyList())
     val models: StateFlow<List<ModelInfo>> = _models.asStateFlow()

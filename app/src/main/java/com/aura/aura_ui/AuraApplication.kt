@@ -2,6 +2,8 @@ package com.aura.aura_ui
 
 import android.app.Application
 import com.aura.aura_ui.data.skills.SkillsRepository
+import com.aura.aura_ui.firebase.FirebaseDiagnostics
+import com.aura.aura_ui.firebase.FirebaseRemoteConfigManager
 import com.aura.aura_ui.notifications.AuraNotifications
 import com.aura.aura_ui.worker.RetentionWorker
 import dagger.hilt.android.HiltAndroidApp
@@ -16,12 +18,16 @@ import kotlinx.coroutines.launch
  *
  * Deliberately does not start the microphone, an overlay, an MCP socket or a model session.
  * Wake word, companion and MCP are user actions; retention and notifications are cheap and
- * safe to initialise here.
+ * safe to initialise here. Firebase wiring stays lazy and opt-in; offline-only builds no-op.
  */
 @HiltAndroidApp
 class AuraApplication : Application() {
 
     @Inject lateinit var skills: SkillsRepository
+
+    @Inject lateinit var diagnostics: FirebaseDiagnostics
+
+    @Inject lateinit var remoteConfig: FirebaseRemoteConfigManager
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -29,6 +35,10 @@ class AuraApplication : Application() {
         super.onCreate()
         AuraNotifications.ensureChannels(this)
         RetentionWorker.enqueue(this)
-        scope.launch { runCatching { skills.ensureSeeded() } }
+        scope.launch {
+            runCatching { diagnostics.applyCrashToggle() }
+            runCatching { remoteConfig.fetchAndActivate() }
+            runCatching { skills.ensureSeeded() }
+        }
     }
 }

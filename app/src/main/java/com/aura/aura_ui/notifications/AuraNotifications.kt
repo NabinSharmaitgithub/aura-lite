@@ -17,11 +17,13 @@ object AuraNotifications {
     const val CHANNEL_VOICE = "aura_voice"
     const val CHANNEL_MCP = "aura_mcp"
     const val CHANNEL_APPROVAL = "aura_approval"
+    const val CHANNEL_FCM = "aura_fcm"
 
     const val ID_RUN = 1001
     const val ID_WAKE = 1002
     const val ID_MCP = 1003
     const val ID_APPROVAL = 2001
+    const val ID_FCM = 2002
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -38,6 +40,9 @@ object AuraNotifications {
             manager.createNotificationChannel(
                 NotificationChannel(CHANNEL_APPROVAL, context.getString(R.string.approval_channel_name), NotificationManager.IMPORTANCE_HIGH),
             )
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_FCM, context.getString(R.string.fcm_channel_name), NotificationManager.IMPORTANCE_DEFAULT),
+            )
         }
     }
 
@@ -53,6 +58,15 @@ object AuraNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
+
+    fun fcmNotification(context: Context, title: String, body: String): Notification =
+        NotificationCompat.Builder(context, CHANNEL_FCM)
+            .setSmallIcon(R.drawable.ic_aura_mark)
+            .setContentTitle(title)
+            .setContentText(body.take(160))
+            .setAutoCancel(true)
+            .setContentIntent(openApp(context))
+            .build()
 
     fun runNotification(context: Context, state: AgentRunState): Notification {
         val text = when {

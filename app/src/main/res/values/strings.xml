@@ -9,4 +9,5 @@
     <string name="voice_channel_name">Voice</string>
     <string name="mcp_channel_name">MCP server</string>
     <string name="approval_channel_name">Approvals</string>
+    <string name="fcm_channel_name">AURA messages</string>
 </resources>

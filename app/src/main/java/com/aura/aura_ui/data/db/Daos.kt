@@ -65,6 +65,12 @@ interface ReminderDao {
     @Query("SELECT * FROM reminders WHERE fired = 0 AND triggerAt <= :now ORDER BY triggerAt")
     suspend fun due(now: Long): List<ReminderEntity>
 
+    @Query("SELECT * FROM reminders ORDER BY triggerAt")
+    suspend fun all(): List<ReminderEntity>
+
+    @Query("DELETE FROM reminders")
+    suspend fun clear()
+
     @Insert
     suspend fun insert(reminder: ReminderEntity): Long
 
@@ -91,6 +97,9 @@ interface SkillDao {
 
     @Upsert
     suspend fun upsert(skill: UserSkillEntity): Long
+
+    @Query("DELETE FROM skills")
+    suspend fun clear()
 
     @Query("DELETE FROM skills WHERE skillId = :skillId")
     suspend fun delete(skillId: String)

@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -407,6 +408,7 @@ fun AuraTextField(
     minHeight: Dp = 52.dp,
     textStyle: TextStyle = LocalTextStyle.current,
     enabled: Boolean = true,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     val mono = LocalMonoScheme.current
@@ -429,6 +431,7 @@ fun AuraTextField(
                 onValueChange = onValueChange,
                 enabled = enabled,
                 textStyle = textStyle.copy(color = mono.textPrimary),
+                visualTransformation = visualTransformation,
                 singleLine = singleLine,
                 cursorBrush = SolidColor(mono.ink),
                 modifier = Modifier.fillMaxWidth(),
