@@ -147,6 +147,11 @@ android {
                 "META-INF/io.netty.versions.properties",
             )
         }
+        jniLibs {
+            // sherpa-onnx's static-link AAR and onnxruntime-android both ship libonnxruntime.so.
+            // The first one wins; sherpa's JNI is statically linked, so either copy is loadable.
+            pickFirsts += "**/libonnxruntime.so"
+        }
     }
 
     lint {
