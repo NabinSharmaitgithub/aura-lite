@@ -161,6 +161,12 @@ fun MonoSettingsScreen(vm: AuraViewModel, onNavigate: (String) -> Unit) {
                     subtitle = if (vm.firebaseAvailable) "Account sync & diagnostics" else "Not configured on this build",
                     icon = Icons.Outlined.Cloud,
                     onClick = { onNavigate(Routes.SETTINGS_FIREBASE) },
+                )
+                GroupedRow(
+                    title = "Backblaze B2",
+                    subtitle = "Private bucket for agent uploads & exports",
+                    icon = Icons.Outlined.CloudUpload,
+                    onClick = { onNavigate(Routes.SETTINGS_B2) },
                     isLast = true,
                 )
             }
@@ -944,6 +950,127 @@ fun FirebaseScreen(vm: AuraViewModel) {
                         "(firebase/firestore.rules) let each user read and write only their own " +
                         "users/<uid>/snapshots documents; no other collection is reachable. " +
                         "The rules are deployed by you — see firebase/README.md.",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = mono.textSecondary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun B2Screen(vm: AuraViewModel) {
+    val mono = LocalMonoScheme.current
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val message by vm.b2Message.collectAsStateWithLifecycle()
+    var bucket by remember(settings.b2BucketName) { mutableStateOf(settings.b2BucketName) }
+    var endpoint by remember(settings.b2Endpoint) { mutableStateOf(settings.b2Endpoint.ifBlank { "s3.us-east-005.backblazeb2.com" }) }
+    var keyId by remember { mutableStateOf("") }
+    var applicationKey by remember { mutableStateOf("") }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth().statusBarsPadding(),
+        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 32.dp),
+    ) {
+        item {
+            Text("Backblaze B2", style = androidx.compose.material3.MaterialTheme.typography.displaySmall, color = mono.textPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Private object storage for files the agent uploads, session screenshots and export bundles. Off by default.",
+                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                color = mono.textSecondary,
+            )
+            Spacer(Modifier.height(20.dp))
+
+            SurfaceCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.CloudUpload, contentDescription = null, tint = mono.textPrimary, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Status", style = androidx.compose.material3.MaterialTheme.typography.titleMedium, color = mono.textPrimary)
+                    Spacer(Modifier.weight(1f))
+                    Badge(
+                        if (vm.b2Configured) "connected" else "off",
+                        tone = if (vm.b2Configured) ChipTone.Live else ChipTone.Broken,
+                    )
+                }
+                if (vm.b2Configured) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("Bucket ${settings.b2BucketName}", style = MonoStyleSmall, color = mono.textSecondary)
+                    Text("Endpoint ${settings.b2Endpoint}", style = MonoStyleSmall, color = mono.textSecondary)
+                    vm.b2MaskedKey?.let {
+                        Spacer(Modifier.height(2.dp))
+                        Text("Application key $it (stored encrypted)", style = MonoStyleSmall, color = mono.textSecondary)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    SecondaryButton("Test connection", { vm.testB2Connection() })
+                }
+                if (message.isNotBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        message,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = if (message.startsWith("Connected") || message.startsWith("Exported")) mono.successDot else mono.textSecondary,
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+
+            SurfaceCard {
+                Text(
+                    "Credentials",
+                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                    color = mono.textPrimary,
+                )
+                Spacer(Modifier.height(8.dp))
+                AuraTextField(value = bucket, onValueChange = { bucket = it }, placeholder = "Bucket name, e.g. aura-lite-storage", textStyle = MonoStyle)
+                Spacer(Modifier.height(8.dp))
+                AuraTextField(value = endpoint, onValueChange = { endpoint = it }, placeholder = "s3.us-east-005.backblazeb2.com", textStyle = MonoStyle)
+                Spacer(Modifier.height(8.dp))
+                AuraTextField(value = keyId, onValueChange = { keyId = it }, placeholder = "Application key id (blank keeps saved)", textStyle = MonoStyle)
+                Spacer(Modifier.height(8.dp))
+                AuraTextField(
+                    value = applicationKey,
+                    onValueChange = { applicationKey = it },
+                    placeholder = "Application key (blank keeps saved)",
+                    textStyle = MonoStyle,
+                    visualTransformation = PasswordVisualTransformation(),
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    InkButton(
+                        "Save & test",
+                        {
+                            vm.saveB2Credentials(bucket, endpoint, keyId, applicationKey)
+                            keyId = ""
+                            applicationKey = ""
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = bucket.isNotBlank() && endpoint.isNotBlank(),
+                    )
+                    SecondaryButton("Clear", { vm.clearB2Credentials() }, modifier = Modifier.weight(1f))
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+
+            GroupedList(header = "Automatic uploads") {
+                GroupedRow(
+                    title = "Back up session screenshots",
+                    subtitle = "Session screenshots upload to B2 when a run ends",
+                    icon = Icons.Outlined.CloudUpload,
+                    trailing = { AuraSwitch(checked = settings.b2SessionBackupEnabled, onCheckedChange = { vm.setB2SessionBackup(it) }) },
+                    showChevron = false,
+                    isLast = true,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+
+            SurfaceCard {
+                Text(
+                    "Set up a private bucket and a dedicated application key with only " +
+                        "listBuckets, listFiles, readFiles and writeFiles — never the Master Application Key. " +
+                        "The key id and key are stored in EncryptedSharedPreferences on this device only; " +
+                        "they are never committed or bundled into any build. Screenshots and exports " +
+                        "upload only when you enable backup or run upload_file / an export from a session.",
                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                     color = mono.textSecondary,
                 )

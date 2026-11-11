@@ -45,6 +45,7 @@ class AuraDeviceBridge @Inject constructor(
     private val data: DataTools,
     private val perception: PerceptionEngine,
     private val search: WebSearchClient,
+    private val b2: com.aura.aura_ui.b2.B2Service,
 ) : DeviceBridge {
 
     override suspend fun execute(tool: String, args: JsonObject): ToolResult {
@@ -159,6 +160,21 @@ class AuraDeviceBridge @Inject constructor(
                 to = JsonArgs.str(args, "to"),
                 body = JsonArgs.rawStr(args, "body"),
                 send = JsonArgs.bool(args, "send"),
+            )
+            "upload_file" -> b2.uploadLocalFile(
+                path = JsonArgs.str(args, "path") ?: return ToolResult.fail(ToolError.notFound("path is required")),
+                objectKey = JsonArgs.str(args, "object_key"),
+                contentType = JsonArgs.str(args, "content_type"),
+            ).fold(
+                onSuccess = { (key, bytes) -> ToolResult.ok(changed = true, observed = buildJsonObject { put("object_key", key); put("bytes", bytes) }) },
+                onFailure = { ToolResult.fail(ToolError.internal(it.message ?: "Upload failed")) },
+            )
+            "download_file" -> b2.downloadToFile(
+                objectKey = JsonArgs.str(args, "object_key") ?: return ToolResult.fail(ToolError.notFound("object_key is required")),
+                destination = JsonArgs.str(args, "destination"),
+            ).fold(
+                onSuccess = { file -> ToolResult.ok(changed = true, observed = buildJsonObject { put("destination", file.absolutePath) }) },
+                onFailure = { ToolResult.fail(ToolError.internal(it.message ?: "Download failed")) },
             )
 
             // ── System ────────────────────────────────────────────────────────────

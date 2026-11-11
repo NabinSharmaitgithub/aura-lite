@@ -44,8 +44,9 @@ traces live in the local JSONL log and are user-deletable under Settings → Dev
 ## Security rules
 
 - `firestore.rules` — owner-only read/write, snapshot shape and size validation, anything else denied.
-- `storage.rules` — no uploads today; pre-scoped per-user area with a 10 MiB cap for future use.
 - `firestore.indexes.json` — empty; no queries, single-document gets only.
+
+File storage lives on Backblaze B2, not Firebase Storage — see `../backblaze/README.md`.
 
 Test them (optional) with the emulator suite before deploying:
 
@@ -68,7 +69,7 @@ npx firebase emulators:exec --only firestore "npm test"
    firebase login
    cd firebase
    # Set your project id in .firebaserc (or run: firebase use --add)
-   firebase deploy --only firestore:rules,firestore:indexes,storage:rules
+   firebase deploy --only firestore:rules,firestore:indexes
    ```
 5. App Check → register the Android app with **Play Integrity**; add the SHA-256 from the release
    signing certificate (CI's "Certificate fingerprints" step prints it) to both Firebase and Play.
