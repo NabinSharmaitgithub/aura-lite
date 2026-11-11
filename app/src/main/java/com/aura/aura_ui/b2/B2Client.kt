@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.time.Instant
 
@@ -56,8 +57,8 @@ class B2Client @Inject constructor(
 
     suspend fun ping(): Result<String> = call("GET", key = "", query = mapOf("list-type" to "2", "prefix" to "users/", "max-keys" to "1"), payload = ByteArray(0), contentType = null)
         .fold(
-            onSuccess = { "Bucket reachable (${xmlTag(it, "KeyCount") ?: "?"} objects listed)" },
-            onFailure = { it.message ?: "unreachable" },
+            onSuccess = { body -> Result.success("Bucket reachable (${xmlTag(body, "KeyCount") ?: "?"} objects listed)") },
+            onFailure = { e -> Result.failure(e) },
         )
 
     suspend fun list(prefix: String, maxKeys: Int = 20): Result<List<String>> =
@@ -107,7 +108,7 @@ class B2Client @Inject constructor(
             )
             val builder = Request.Builder()
                 .url("https://${cfg.endpoint}$path" + if (query.isEmpty()) "" else "?" + query.entries.map { (k, v) -> "$k=${S3v4.uriEncode(v)}" }.joinToString("&"))
-                .method(method, if (payload.isNotEmpty() || method == "PUT" || method == "POST") payload.toRequestBody(contentType ?: "application/octet-stream") else null)
+                .method(method, if (payload.isNotEmpty() || method == "PUT" || method == "POST") payload.toRequestBody(contentType?.trim()?.takeIf { it.isNotBlank() }?.let { runCatching { it.toMediaType() }.getOrNull() } ?: "application/octet-stream".toMediaType()) else null)
             (signed.headers).forEach { (k, v) -> builder.header(k, v) }
             if (contentType != null) builder.header("content-type", contentType)
             http.newCall(builder.build()).execute().use { response ->
