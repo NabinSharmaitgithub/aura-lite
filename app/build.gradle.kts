@@ -8,8 +8,8 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
-    alias(libs.plugins.googleServices) apply false
-    alias(libs.plugins.firebaseCrashlytics) apply false
+    alias(libs.plugins.google.services) apply false
+    alias(libs.plugins.firebase.crashlytics) apply false
 }
 
 fun localProperty(key: String, default: String = ""): String {
