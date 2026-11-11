@@ -19,7 +19,6 @@ retrofit = "2.11.0"
 serialization = "1.8.0"
 coroutines = "1.10.1"
 ktor = "3.1.2"
-koog = "1.0.0"
 mcpClient = "0.8.3"
 onnx = "1.20.0"
 mlkitText = "16.0.1"
@@ -100,7 +99,6 @@ ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor"
 ktor-server-content-negotiation = { module = "io.ktor:ktor-server-content-negotiation", version.ref = "ktor" }
 ktor-server-status-pages = { module = "io.ktor:ktor-server-status-pages", version.ref = "ktor" }
 
-koog-agents = { module = "ai.koog:koog-agents", version.ref = "koog" }
 mcp-kotlin-client = { module = "io.modelcontextprotocol:kotlin-sdk-client", version.ref = "mcpClient" }
 
 onnxruntime = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnx" }
