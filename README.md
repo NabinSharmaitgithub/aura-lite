@@ -282,9 +282,11 @@ bar.
 
 - Settings are stored in `SharedPreferences` (`AuraSettings`) rather than DataStore so screens can
   read them synchronously during composition. DataStore remains in the dependency catalogue.
-- The agent loop lives in `AgentRuntime` over an OpenAI-compatible streaming client. Koog and the
-  MCP Kotlin SDK client are declared in the locked stack but do not own the loop; the unified tool
-  registry is what guarantees one contract for local and remote callers.
+- The agent loop lives in `AgentRuntime` over an OpenAI-compatible streaming client. The MCP
+  Kotlin SDK client is declared in the locked stack but does not own the loop; the unified tool
+  registry is what guarantees one contract for local and remote callers. The Koog aggregator is
+  intentionally not bundled: `ai.koog:koog-agents:1.0.0` declares `minSdk 35`, which conflicts with
+  the required `minSdk 26`, and no runtime code imports it.
 - Direct phone calls and direct SMS sending are disabled because `CALL_PHONE` and `SEND_SMS` are not
   declared; the agent opens the dialer or the SMS compose screen instead.
 - `browser_upload` returns an explicit unsupported/handoff result rather than faking a file chooser.

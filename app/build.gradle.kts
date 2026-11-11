@@ -211,7 +211,6 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.json)
 
-    implementation(libs.koog.agents)
     implementation(libs.mcp.kotlin.client)
 
     implementation(libs.onnxruntime)
