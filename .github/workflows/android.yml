@@ -136,7 +136,7 @@ jobs:
         run: |
           set -uo pipefail
           out=build-report/certificates.txt
-          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          APKSIGNER=$(find "$ANDROID_HOME" -type f -name apksigner 2>/dev/null | sort -V | tail -1)
           : > "$out"
           echo "AURA build certificate report" >> "$out"
           echo "commit: $(git rev-parse HEAD)" >> "$out"
@@ -153,7 +153,7 @@ jobs:
               if [ -n "$APKSIGNER" ] && [ -x "$APKSIGNER" ]; then
                 "$APKSIGNER" verify --print-certs "$apk" 2>&1 \
                   | grep -E 'Signer #1 certificate (DN|SHA-256 digest|SHA-1 digest):' \
-                  | sed 's/^/  /'
+                  | sed 's/^/  /' || true
                 "$APKSIGNER" verify "$apk" >/dev/null 2>&1 \
                   && echo "  signature_valid: yes" \
                   || echo "  signature_valid: no"
@@ -171,7 +171,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          APKSIGNER=$(find "$ANDROID_HOME" -type f -name apksigner | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::apksigner not found in the Android SDK"
+            exit 1
+          fi
           for apk in app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk; do
             echo "verifying $apk"
             "$APKSIGNER" verify --verbose "$apk" | sed 's/^/  /'
