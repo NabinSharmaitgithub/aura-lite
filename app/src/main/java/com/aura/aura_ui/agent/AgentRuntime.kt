@@ -55,8 +55,15 @@ class AgentRuntime @Inject constructor(
     private val mcp: McpClient,
     private val bridge: DeviceBridge,
     private val perception: com.aura.aura_ui.perception.PerceptionEngine,
+    private val b2: com.aura.aura_ui.b2.B2Service,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Ends a run and, when the user enabled it in Settings → Backblaze, uploads its screenshots. */
+    private fun endSession(session: com.aura.aura_ui.data.session.SessionWriter, outcome: String, steps: Int, answer: String?) {
+        runCatching { session.end(outcome, steps, answer) }
+        scope.launch { runCatching { b2.backupSession(session.sessionId) } }
+    }
     private val promptBuilder = PromptBuilder(settings, learnings)
 
     private val _state = MutableStateFlow(AgentRunState())
@@ -324,7 +331,7 @@ class AgentRuntime @Inject constructor(
                 finalAnswer = if (cancelRequested) "Stopped." else "I used all $maxSteps steps without finishing. Nothing else was changed."
             }
 
-            session.end(outcome, steps, finalAnswer)
+            endSession(session, outcome, steps, finalAnswer)
             _state.value = _state.value.copy(
                 running = false,
                 paused = false,
@@ -338,7 +345,7 @@ class AgentRuntime @Inject constructor(
                 _state.value.trace.lastOrNull { it.type == TraceType.ANSWER }
             }
         } catch (cancel: CancellationException) {
-            runCatching { session.end(SessionOutcome.CANCELLED, steps, "Cancelled") }
+            endSession(session, SessionOutcome.CANCELLED, steps, "Cancelled")
             _state.value = _state.value.copy(
                 running = false,
                 paused = false,
@@ -351,7 +358,7 @@ class AgentRuntime @Inject constructor(
         } catch (t: Throwable) {
             val message = t.message ?: "The provider returned an error."
             runCatching { session.error(message) }
-            runCatching { session.end(SessionOutcome.FAILURE, steps, message) }
+            endSession(session, SessionOutcome.FAILURE, steps, message)
             addTrace(TraceType.ERROR, message, ok = false)
             _state.value = _state.value.copy(
                 running = false,

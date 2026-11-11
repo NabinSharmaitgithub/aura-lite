@@ -40,11 +40,11 @@ The README is the map of the implementation; those six files remain the authorit
 | Modules | `:app` (Android application), `:mcp-server` (Android library) |
 | SDKs | minSdk 26, compileSdk 36, targetSdk 36, JDK 17 |
 | Build | AGP 8.10.1, Gradle 8.11.1, KSP, Hilt 2.56.1 |
-| Source size | 80 Kotlin files, ~14,200 lines |
-| Device tools | 47 tool definitions in one catalog (spec text says 45; the catalog covers every name listed there plus `run_steps` and browser helpers) |
+| Source size | 78 Kotlin files, ~14,500 lines |
+| Device tools | 49 tool definitions in one catalog (spec text says 45; the catalog covers every name listed there plus `run_steps`, browser helpers and the Backblaze B2 tools) |
 | LLM providers | 14 built-in endpoints + custom OpenAI-compatible endpoint |
 | Design | MONO: white canvas, black ink, blood-red semantics, floating capsule navigation |
-| Storage | Room v1, DataStore preferences, EncryptedSharedPreferences, JSONL sessions, JSON learnings |
+| Storage | Room v1, DataStore preferences, EncryptedSharedPreferences, JSONL sessions, JSON learnings (+ opt-in Backblaze B2 file storage, see `backblaze/README.md`) |
 | Release ABIs | `arm64-v8a`, `armeabi-v7a` |
 
 ---
@@ -75,10 +75,11 @@ The README is the map of the implementation; those six files remain the authorit
 │   └── src/main/kotlin/com/aura/mcp/
 ├── firebase/                               OPTIONAL opt-in backend: rules, indexes, functions, README
 │   ├── firestore.rules                     owner-only rules, snapshot validation, default deny
-│   ├── storage.rules                       pre-scoped per-user area (unused today)
 │   ├── firebase.json, .firebaserc, firestore.indexes.json
 │   ├── functions/                           optional authenticated Cloud Function (Blaze)
 │   └── README.md                           deploy + verify checklist
+├── backblaze/                              OPTIONAL opt-in file storage (Backblaze B2), replaces Firebase Storage
+│   └── README.md                           bucket, app key, layout, verify checklist
 └── .github/workflows/android.yml           CI: secret scan, debug + release, artifacts, releases
 ```
 
@@ -94,6 +95,7 @@ The README is the map of the implementation; those six files remain the authorit
 | `browser/` | Dedicated WebView `BrowserActivity` + JS-backed controller |
 | `data/` | Room (`db/`), DataStore settings, secure keys, session JSONL, learnings, skills, eval catalog, restricted apps |
 | `firebase/` | Optional opt-in Firebase: Auth (email/Google), Firestore sync, FCM, Remote Config, Crashlytics, Analytics wrappers |
+| `b2/` | Optional opt-in Backblaze B2: hand-rolled AWS SigV4 signer + S3 client/service; screenshots backup, session exports, agent tools |
 | `di/` | Hilt module wiring singletons and the in-process MCP client |
 | `ime/` | Optional AURA keyboard (voice dictation surface) |
 | `notifications/` | Notification listener, channels, approval action receiver |
@@ -112,7 +114,7 @@ The README is the map of the implementation; those six files remain the authorit
 | Package | Responsibility |
 |---|---|
 | `bridge/` | `DeviceBridge`, `ToolResult`, `ToolDefinition`, `ToolDomain` — the only Android dependency boundary |
-| `tools/` | `ToolCatalog` (47 schemas) and `McpToolRegistry` (validation, dispatch, `tools/list`, `tools/call`) |
+| `tools/` | `ToolCatalog` (49 schemas) and `McpToolRegistry` (validation, dispatch, `tools/list`, `tools/call`) |
 | `server/` | JSON-RPC handling, `InProcessMcpServer` / `McpClient` (agent path), Ktor HTTPS `HttpMcpServer` (LAN path) |
 | `lan/` | TLS identity, QR pairing + token crypto, mDNS advertisement |
 | `audit/` | Append-only MCP audit log |
@@ -232,9 +234,9 @@ same trace the agent produced.
 
 ### Tool surface and transports
 
-- One 47-tool catalog covering screen reading, gestures, app launch, text entry, system settings,
+- One 49-tool catalog covering screen reading, gestures, app launch, text entry, system settings,
   media, notifications, contacts, calendar/alarms, files, browser, perception, memory, skills,
-  reminders and search.
+  reminders, search and the Backblaze B2 upload/download tools.
 - `InProcessMcpServer` + `McpClient` serve the agent without sockets.
 - `HttpMcpServer` serves LAN clients over HTTPS/JSON-RPC with mDNS discovery, QR pairing, hashed
   tokens, trusted-device management and an audit log.
@@ -254,6 +256,7 @@ same trace the agent produced.
 | JSON (`files/learnings/learnings.json`) | `data/learnings/LearningsStore.kt` | learned facts + voice corrections, one document, rewritten atomically |
 | JSON (`files/skills/`) | `data/skills/SkillsRepository.kt` | user skill packs, seeded from `assets/skills/index.json` |
 | JSONL (`files/mcp/audit.jsonl`) | `mcp-server/.../audit/McpAuditLogger.kt` | MCP tool calls, pruned by retention |
+| Backblaze B2 `users/` namespace | `b2/` | opt-in file storage: screenshots backup, session export bundles, `upload_file`/`download_file`; 10 MiB cap; see `backblaze/README.md` |
 | PNG (`files/screen/current.png`) | `accessibility/ScreenCaptureManager.kt` | one transient screenshot, overwritten per capture |
 | Firestore (`users/{uid}/snapshots/*`) | `firebase/FirebaseSync.kt` | opt-in only; facts/plans/skills two-way last-write-wins, sessions push-only; see `firebase/README.md` |
 
@@ -285,7 +288,7 @@ bar.
 | Onboarding | 10 steps, persisted progress, permission steps poll live state and auto-advance |
 | Agent | Streaming loop, pause/resume/stop, trace, destructive confirmation, hooks, skills, loop detection, step budget |
 | Brain & models | 14 provider presets + custom, model catalog, key verification, per-provider keys |
-| Tools | 47-tool catalog, tool browser, JSON schema display, MCP audit, trusted devices, LAN server health |
+| Tools | 49-tool catalog, tool browser, JSON schema display, MCP audit, trusted devices, LAN server health, B2 upload/download tools |
 | Memory | Learned facts per scope, manual add/delete, voice corrections, clear actions |
 | Companion & voice | Wake word (optional), Silero VAD, STT/TTS (sherpa), overlay pill, visual feedback |
 | Perception | ML Kit OCR + optional ONNX icon detection, downscaled single-frame capture |
@@ -306,6 +309,12 @@ bar.
   the required `minSdk 26`, and no runtime code imports it.
 - Direct phone calls and direct SMS sending are disabled because `CALL_PHONE` and `SEND_SMS` are not
   declared; the agent opens the dialer or the SMS compose screen instead.
+- File storage uses Backblaze B2, not Firebase Storage (which was removed): bucket
+  `aura-lite-storage` (`allPrivate`, SSE-B2), one bucket-scoped application key restricted to
+  `users/…` (`listFiles`, `readFiles`, `writeFiles`, `deleteFiles`), and a ~120-line hand-rolled
+  AWS SigV4 signer (`b2/S3v4.kt`) so the app carries no AWS SDK. Keys live only in
+  EncryptedSharedPreferences; the client refuses objects larger than 10 MiB and only writes under
+  `users/`, matching the key restriction.
 - `browser_upload` returns an explicit unsupported/handoff result rather than faking a file chooser.
 - Firebase is an opt-in layer, not a cloud conversion: the app ships working offline without it;
   `app/google-services.json` locally (or the base64 secret `GOOGLE_SERVICES_JSON_BASE64` in CI)
@@ -328,8 +337,9 @@ applied and every Firebase call site no-ops. Users opt in under Settings → Fir
 sign-in, two-way sync of facts/plans/skills (last write wins), push-only session summaries +
 hash-only audit log, FCM token display, and off-by-default Analytics and Crashlytics toggles.
 `firebase/README.md` lists the console setup, deploys the rules
-(`firebase/firestore.rules`, `firebase/storage.rules`), and documents the data model, conflict
-policy and privacy summary. Deploy by the user, never by the build.
+(`firebase/firestore.rules`), and documents the data model, conflict
+policy and privacy summary. File-backed storage (screenshots/session artifacts) is provisioned on
+Backblaze B2 — see `backblaze/README.md`. Deploy by the user, never by the build.
 
 ---
 
@@ -348,4 +358,6 @@ policy and privacy summary. Deploy by the user, never by the build.
 - [ ] With a linked account: sign-in works (email + Google), "Sync now" pushes facts/plans/skills,
   a second signed-in device pulls them, and rules reject cross-user reads.
 - [ ] Session sync stays off until the user enables it; exports contain no prompts, only summaries.
-- [ ] Firestore/Storage rules deployed and `firebase deploy --only firestore:rules,storage:rules` exits 0.
+- [ ] Firestore rules deployed and `firebase deploy --only firestore:rules,firestore:indexes` exits 0.
+- [ ] Backblaze bucket `aura-lite-storage` reachable with the scoped app key (see `backblaze/README.md`); uploads land under `users/`.
+- [ ] Settings → Backblaze: save the scoped application key, "Test connection" succeeds, the masked key hint appears, and "Session screenshots backup" uploads PNGs when a run ends.

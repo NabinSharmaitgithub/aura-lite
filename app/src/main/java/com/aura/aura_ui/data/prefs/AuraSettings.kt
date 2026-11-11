@@ -60,6 +60,9 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
         firebaseAnalyticsEnabled = firebaseAnalyticsEnabled,
         firebaseCrashlyticsEnabled = firebaseCrashlyticsEnabled,
         firebaseSessionSyncEnabled = firebaseSessionSyncEnabled,
+        b2Endpoint = b2Endpoint,
+        b2BucketName = b2BucketName,
+        b2SessionBackupEnabled = b2SessionBackupEnabled,
     )
 
     var onboardingComplete: Boolean
@@ -241,6 +244,30 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
             bump()
         }
 
+    /** Backblaze B2 S3 endpoint, e.g. s3.us-east-005.backblazeb2.com (without scheme). */
+    var b2Endpoint: String
+        get() = prefs.getString("b2_endpoint", "") ?: ""
+        set(value) {
+            prefs.edit().putString("b2_endpoint", value.trim().removePrefix("https://").removePrefix("http://").trimEnd('/')).apply()
+            bump()
+        }
+
+    /** Bucket name inside the user's B2 account. Not a secret; the key lives in EncryptedSharedPreferences. */
+    var b2BucketName: String
+        get() = prefs.getString("b2_bucket_name", "") ?: ""
+        set(value) {
+            prefs.edit().putString("b2_bucket_name", value.trim()).apply()
+            bump()
+        }
+
+    /** When on, session screenshots are backed up to B2 at the end of a run. Off by default. */
+    var b2SessionBackupEnabled: Boolean
+        get() = prefs.getBoolean("b2_session_backup_enabled", false)
+        set(value) {
+            prefs.edit().putBoolean("b2_session_backup_enabled", value).apply()
+            bump()
+        }
+
     /** User linked a Firebase account; sync runs only while this is also true. */
     var firebaseEnabled: Boolean
         get() = prefs.getBoolean("firebase_enabled", false)
@@ -343,4 +370,7 @@ data class SettingsSnapshot(
     val firebaseAnalyticsEnabled: Boolean = false,
     val firebaseCrashlyticsEnabled: Boolean = false,
     val firebaseSessionSyncEnabled: Boolean = false,
+    val b2Endpoint: String = "",
+    val b2BucketName: String = "",
+    val b2SessionBackupEnabled: Boolean = false,
 )

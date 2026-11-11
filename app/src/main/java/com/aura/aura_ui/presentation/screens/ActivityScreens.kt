@@ -158,6 +158,7 @@ fun SessionDetailScreen(vm: AuraViewModel, sessionId: String) {
     val sessions by vm.recentSessions.collectAsStateWithLifecycle()
     val summary = sessions.firstOrNull { it.id == sessionId }
     val events = remember(sessionId) { vm.sessionEvents(sessionId) }
+    val b2Message by vm.b2Message.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth().statusBarsPadding(),
@@ -184,6 +185,16 @@ fun SessionDetailScreen(vm: AuraViewModel, sessionId: String) {
                     KeyValueRow("Session id", summary.id)
                     Spacer(Modifier.height(10.dp))
                     GhostButton("Delete this run", { vm.deleteSession(summary.id) }, color = mono.blood)
+                    Spacer(Modifier.height(4.dp))
+                    GhostButton("Export to Backblaze B2", { vm.exportSessionToB2(sessionId) })
+                    if (b2Message.isNotBlank()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            b2Message,
+                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                            color = if (b2Message.startsWith("Exported")) mono.successDot else mono.textSecondary,
+                        )
+                    }
                 }
                 Spacer(Modifier.height(18.dp))
             }

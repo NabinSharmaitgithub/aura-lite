@@ -53,6 +53,7 @@ import com.aura.aura_ui.presentation.screens.LicensesScreen
 import com.aura.aura_ui.presentation.screens.MemoryScreen
 import com.aura.aura_ui.presentation.screens.MonoSettingsScreen
 import com.aura.aura_ui.presentation.screens.PermissionsHealthScreen
+import com.aura.aura_ui.presentation.screens.B2Screen
 import com.aura.aura_ui.presentation.screens.FirebaseScreen
 import com.aura.aura_ui.presentation.screens.PrivacyPolicyScreen
 import com.aura.aura_ui.presentation.screens.ProviderSettingsScreen
@@ -174,6 +175,9 @@ fun AuraAppShell(
                 VoiceSettingsScreen(vm)
             }
 
+            composable(Routes.SETTINGS_B2) {
+                B2Screen(vm)
+            }
             composable(Routes.SETTINGS_FIREBASE) {
                 FirebaseScreen(vm)
             }

@@ -34,6 +34,7 @@ import com.aura.aura_ui.data.learnings.LearningsStore
 import com.aura.aura_ui.data.learnings.LearningFact
 import com.aura.aura_ui.data.prefs.AuraSettings
 import com.aura.aura_ui.data.prefs.RestrictedAppsRepository
+import com.aura.aura_ui.data.prefs.SecureKeyStore
 import com.aura.aura_ui.data.prefs.SettingsSnapshot
 import com.aura.aura_ui.data.session.SessionLogStore
 import com.aura.aura_ui.data.session.SessionSummary
@@ -111,6 +112,8 @@ class AuraViewModel @Inject constructor(
     private val firebaseAuth: FirebaseAuthManager,
     private val firebaseSync: FirebaseSync,
     private val diagnostics: FirebaseDiagnostics,
+    private val b2: com.aura.aura_ui.b2.B2Service,
+    private val secureKeys: SecureKeyStore,
 ) : ViewModel() {
 
     val settings: StateFlow<SettingsSnapshot> = prefs.revision
@@ -182,6 +185,65 @@ class AuraViewModel @Inject constructor(
         _firebaseBusy.value = false
         _firebaseMessage.value = report.detail
         diagnostics.logSync(report.pushed.size, report.pulled.size, report.skipped.size + report.errors.size)
+    }
+
+
+    private val _b2Message = MutableStateFlow("")
+    val b2Message: StateFlow<String> = _b2Message.asStateFlow()
+
+    val b2Configured: Boolean get() = b2.isConfigured()
+    val b2MaskedKey: String? get() = secureKeys.maskedB2ApplicationKey()
+
+    fun saveB2Credentials(bucket: String, endpoint: String, keyId: String, applicationKey: String) = viewModelScope.launch {
+        _b2Message.value = "Saving…"
+        val saved = withContext(Dispatchers.IO) {
+            runCatching {
+                prefs.b2BucketName = bucket.trim()
+                prefs.b2Endpoint = endpoint.trim()
+                if (keyId.isNotBlank()) secureKeys.b2KeyId = keyId
+                if (applicationKey.isNotBlank()) secureKeys.b2ApplicationKey = applicationKey
+                true
+            }.getOrDefault(false)
+        }
+        if (!saved) {
+            _b2Message.value = "Could not save the B2 settings"
+            return@launch
+        }
+        val result = withContext(Dispatchers.IO) { b2.testConnection() }
+        result.fold(
+            onSuccess = { report -> _b2Message.value = "Connected · " + report },
+            onFailure = { error -> _b2Message.value = "Saved, but the bucket is unreachable: " + (error.message ?: "unknown") },
+        )
+    }
+
+    fun testB2Connection() = viewModelScope.launch {
+        _b2Message.value = "Testing…"
+        withContext(Dispatchers.IO) { b2.testConnection() }.fold(
+            onSuccess = { report -> _b2Message.value = report },
+            onFailure = { error -> _b2Message.value = error.message ?: "Unreachable" },
+        )
+    }
+
+    fun clearB2Credentials() {
+        secureKeys.b2KeyId = null
+        secureKeys.b2ApplicationKey = null
+        prefs.apply {
+            b2BucketName = ""
+            b2Endpoint = ""
+            b2SessionBackupEnabled = false
+        }
+        _b2Message.value = "Cleared. Nothing is uploaded until you configure B2 again."
+    }
+
+    fun setB2SessionBackup(enabled: Boolean) = updateSettings { it.b2SessionBackupEnabled = enabled }
+
+    fun exportSessionToB2(sessionId: String) = viewModelScope.launch {
+        _b2Message.value = "Exporting…"
+        val result = withContext(Dispatchers.IO) { b2.exportSession(sessionId) }
+        result.fold(
+            onSuccess = { key -> _b2Message.value = "Exported to " + key },
+            onFailure = { error -> _b2Message.value = "Export failed: " + (error.message ?: "unknown") },
+        )
     }
 
     fun setFirebaseToggle(kind: String, enabled: Boolean) {

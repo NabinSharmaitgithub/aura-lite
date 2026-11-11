@@ -68,6 +68,31 @@ class SecureKeyStore @Inject constructor(@ApplicationContext private val context
         get() = prefs.getString("mcp_pairing_secret", null)
         set(value) = prefs.edit().putString("mcp_pairing_secret", value).apply()
 
+    /** Backblaze B2 application key id (stored encrypted; the application key lives here too). */
+    var b2KeyId: String?
+        get() = prefs.getString("b2_key_id", null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            if (value.isNullOrBlank()) prefs.edit().remove("b2_key_id").apply()
+            else prefs.edit().putString("b2_key_id", value.trim()).apply()
+        }
+
+    /** Backblaze B2 application key (the secret half). Never shown again; only masked hints. */
+    var b2ApplicationKey: String?
+        get() = prefs.getString("b2_application_key", null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            if (value.isNullOrBlank()) prefs.edit().remove("b2_application_key").apply()
+            else prefs.edit().putString("b2_application_key", value.trim()).apply()
+        }
+
+    fun hasB2Credentials(): Boolean = b2KeyId != null && b2ApplicationKey != null
+
+    /** Masked hint safe to show in Settings. Never reveals the middle of the key. */
+    fun maskedB2ApplicationKey(): String? {
+        val key = b2ApplicationKey ?: return null
+        if (key.length <= 8) return "••••"
+        return key.take(4) + "••••" + key.takeLast(4)
+    }
+
     internal fun raw(): SharedPreferences = prefs
 
     companion object {
