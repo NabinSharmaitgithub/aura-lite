@@ -1,0 +1,39 @@
+# Gradle
+.gradle/
+build/
+*/build/
+!gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# Android
+*.apk
+*.aab
+*.ap_
+*.dex
+.cxx/
+release/
+app/libs/*.aar
+app/src/debug/
+captures/
+.externalNativeBuild/
+.output/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Secrets — never commit
+*.jks
+*.keystore
+keystore.properties
+secrets.properties
+google-services.json
+app/google-services.json
+*.pem
+*.p12
+
+# Generated
+app/src/main/assets/models/*.onnx
+app/src/main/assets/kws/

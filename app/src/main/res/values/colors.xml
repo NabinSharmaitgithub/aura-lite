@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="aura_canvas">#FAFAF8</color>
+    <color name="aura_ink">#0A0A0A</color>
+    <color name="aura_blood">#A31621</color>
+    <color name="aura_text_on_ink">#F5F5F2</color>
+</resources>

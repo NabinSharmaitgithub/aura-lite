@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AURA</string>
+    <string name="accessibility_service_label">AURA</string>
+    <string name="accessibility_service_description">AURA reads the screen and taps, types and scrolls on your behalf when you ask it to. Everything happens on your device.</string>
+    <string name="notification_listener_label">AURA notifications</string>
+    <string name="ime_label">AURA keyboard</string>
+    <string name="run_channel_name">Agent runs</string>
+    <string name="voice_channel_name">Voice</string>
+    <string name="mcp_channel_name">MCP server</string>
+    <string name="approval_channel_name">Approvals</string>
+</resources>

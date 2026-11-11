@@ -1,0 +1,14 @@
+{
+  "steps": [
+    { "id": "landing", "title": "AURA", "subtitle": "An agent that actually operates your phone." },
+    { "id": "consent", "title": "How AURA works", "subtitle": "Read the deal before you start." },
+    { "id": "profile", "title": "Profile and provider", "subtitle": "Your name, and the model key that powers AURA." },
+    { "id": "restricted", "title": "A note on Android 13+", "subtitle": "Sideloaded apps may need one extra tap." },
+    { "id": "accessibility", "title": "Accessibility service", "subtitle": "This is how AURA sees and acts." },
+    { "id": "overlay", "title": "Display over other apps", "subtitle": "A pause control that follows you." },
+    { "id": "notifications", "title": "Notification access", "subtitle": "Only when you ask." },
+    { "id": "runtime", "title": "Microphone and notifications", "subtitle": "Voice and run status." },
+    { "id": "verify", "title": "Verify the key", "subtitle": "One live call to your provider." },
+    { "id": "ready", "title": "Ready", "subtitle": "AURA stays out of the way until you ask." }
+  ]
+}

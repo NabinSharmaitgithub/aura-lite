@@ -1,0 +1,2 @@
+-keep class com.aura.mcp.** { *; }
+-dontwarn org.slf4j.**
