@@ -91,7 +91,7 @@ class B2Service @Inject constructor(
         if (!dir.isDirectory) return@withContext Result.failure(IllegalArgumentException("Session not found"))
         val stamp = System.currentTimeMillis()
         val zipFile = File(context.cacheDir, "aura-export-$sessionId-$stamp.zip")
-        runCatching {
+        val result = runCatching {
             zipDirectory(dir, zipFile)
             if (zipFile.length() > MAX_UPLOAD_BYTES) {
                 throw IllegalArgumentException("Export is larger than 10 MiB")
@@ -100,6 +100,10 @@ class B2Service @Inject constructor(
         }.also {
             zipFile.delete()
         }
+        return result.fold(
+            onSuccess = { it },
+            onFailure = { Result.failure(it) },
+        )
     }
 
     private fun zipDirectory(dir: File, target: File) {
