@@ -151,9 +151,7 @@ jobs:
               echo "sha256: $(sha256sum "$apk" | awk '{print $1}')"
               echo "signing:"
               if [ -n "$APKSIGNER" ] && [ -x "$APKSIGNER" ]; then
-                "$APKSIGNER" verify --print-certs "$apk" 2>&1 \
-                  | grep -E 'Signer #1 certificate (DN|SHA-256 digest|SHA-1 digest):' \
-                  | sed 's/^/  /' || true
+                "$APKSIGNER" verify --print-certs "$apk" 2>&1 | sed 's/^/  /' || true
                 "$APKSIGNER" verify "$apk" >/dev/null 2>&1 \
                   && echo "  signature_valid: yes" \
                   || echo "  signature_valid: no"
