@@ -136,10 +136,12 @@ jobs:
         run: |
           set -uo pipefail
           out=build-report/certificates.txt
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
           : > "$out"
           echo "AURA build certificate report" >> "$out"
           echo "commit: $(git rev-parse HEAD)" >> "$out"
           echo "generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$out"
+          echo "apksigner: ${APKSIGNER:-not found}" >> "$out"
           echo >> "$out"
           for apk in app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk; do
             [ -f "$apk" ] || continue
@@ -148,11 +150,32 @@ jobs:
               echo "size_bytes: $(stat -c%s "$apk")"
               echo "sha256: $(sha256sum "$apk" | awk '{print $1}')"
               echo "signing:"
-              keytool -printcert -jarfile "$apk" 2>/dev/null | grep -E 'Owner:|Valid from:|SHA1:|SHA256:' | sed 's/^/  /' || echo "  unsigned or unreadable"
+              if [ -n "$APKSIGNER" ] && [ -x "$APKSIGNER" ]; then
+                "$APKSIGNER" verify --print-certs "$apk" 2>&1 \
+                  | grep -E 'Signer #1 certificate (DN|SHA-256 digest|SHA-1 digest):' \
+                  | sed 's/^/  /'
+                "$APKSIGNER" verify "$apk" >/dev/null 2>&1 \
+                  && echo "  signature_valid: yes" \
+                  || echo "  signature_valid: no"
+              else
+                keytool -printcert -jarfile "$apk" 2>/dev/null \
+                  | grep -E 'Owner:|Valid from:|SHA1:|SHA256:' \
+                  | sed 's/^/  /' || echo "  unsigned or unreadable"
+              fi
               echo
             } >> "$out"
           done
           cat "$out"
+
+      - name: Verify APK signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          for apk in app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk; do
+            echo "verifying $apk"
+            "$APKSIGNER" verify --verbose "$apk" | sed 's/^/  /'
+          done
 
       - name: Build report
         if: always()
