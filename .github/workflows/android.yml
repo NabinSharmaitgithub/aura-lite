@@ -60,8 +60,15 @@ jobs:
         run: |
           set -euo pipefail
           test -d "$ANDROID_HOME"
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools" >/dev/null
+          SDKMANAGER=$(find "$ANDROID_HOME" -name sdkmanager -type f | head -1)
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found under $ANDROID_HOME"
+            ls -la "$ANDROID_HOME"
+            exit 1
+          fi
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
           echo "build-tools: $(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
 
       - name: Set up Gradle
