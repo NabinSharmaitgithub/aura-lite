@@ -37,3 +37,13 @@ app/google-services.json
 # Generated
 app/src/main/assets/models/*.onnx
 app/src/main/assets/kws/
+
+# Firebase
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+firebase/.firebase/
+firebase/firebase-debug.log
+firebase/firestore-debug.log
+firebase/functions/node_modules/
+firebase/functions/.env

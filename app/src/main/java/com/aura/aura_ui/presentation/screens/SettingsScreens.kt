@@ -1,6 +1,12 @@
 package com.aura.aura_ui.presentation.screens
 
 import android.Manifest
+import android.app.Activity
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Build
@@ -147,6 +153,16 @@ fun MonoSettingsScreen(vm: AuraViewModel, onNavigate: (String) -> Unit) {
                 GroupedRow(title = "Restricted apps", subtitle = "${blocked.size} blocked", icon = Icons.Outlined.Apps, onClick = { onNavigate(Routes.SETTINGS_RESTRICTED_APPS) })
                 GroupedRow(title = "Trusted devices", subtitle = "MCP clients on your LAN", icon = Icons.Outlined.Devices, onClick = { onNavigate(Routes.SETTINGS_TRUSTED_DEVICES) })
                 GroupedRow(title = "Search key", subtitle = "Tavily · optional", icon = Icons.Outlined.Search, onClick = { onNavigate(Routes.SETTINGS_TAVILY) }, isLast = true)
+            }
+            Spacer(Modifier.height(16.dp))
+            GroupedList(header = "Cloud — optional, off by default") {
+                GroupedRow(
+                    title = "Firebase",
+                    subtitle = if (vm.firebaseAvailable) "Account sync & diagnostics" else "Not configured on this build",
+                    icon = Icons.Outlined.Cloud,
+                    onClick = { onNavigate(Routes.SETTINGS_FIREBASE) },
+                    isLast = true,
+                )
             }
             Spacer(Modifier.height(16.dp))
             GroupedList(header = "Legal") {
@@ -743,4 +759,195 @@ object LegalCopy {
 
         Full licence texts are available from each project's repository. This screen is a notice, not a replacement for those licences.
     """.trimIndent()
+}
+
+@Composable
+fun FirebaseScreen(vm: AuraViewModel) {
+    val mono = LocalMonoScheme.current
+    val context = LocalContext.current
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val busy by vm.firebaseBusy.collectAsStateWithLifecycle()
+    val email by vm.firebaseEmail.collectAsStateWithLifecycle()
+    val message by vm.firebaseMessage.collectAsStateWithLifecycle()
+    var fieldEmail by remember(email) { mutableStateOf(email ?: "") }
+    var password by remember { mutableStateOf("") }
+
+    // Google sign-in is offered only when this build carries google-services.json, which
+    // generates the default_web_client_id string. Otherwise the button stays hidden and
+    // email/password still works.
+    val activity = context as? Activity
+    val googleClient = remember(activity) {
+        val webClientId = runCatching {
+            val id = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+            if (id != 0) context.getString(id) else null
+        }.getOrNull()
+        val act = activity
+        if (act != null && webClientId != null) {
+            GoogleSignIn.getClient(
+                act,
+                GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                    .requestIdToken(webClientId)
+                    .requestEmail()
+                    .build(),
+            )
+        } else {
+            null
+        }
+    }
+    val googleLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        task.addOnSuccessListener { account ->
+            val idToken = account?.idToken
+            if (idToken != null) vm.firebaseSignInWithGoogle(idToken) else vm.showNotice("Google sign-in returned no token")
+        }
+        task.addOnFailureListener { vm.showNotice("Google sign-in cancelled or failed") }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth().statusBarsPadding(),
+        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 32.dp),
+    ) {
+        item {
+            Text("Firebase", style = androidx.compose.material3.MaterialTheme.typography.displaySmall, color = mono.textPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Optional cloud account. Off by default — AURA is fully offline until you link one.",
+                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                color = mono.textSecondary,
+            )
+            Spacer(Modifier.height(20.dp))
+
+            if (!vm.firebaseAvailable) {
+                SurfaceCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Cloud, contentDescription = null, tint = mono.textSecondary, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Not configured on this build",
+                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                            color = mono.textPrimary,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "This APK was compiled without app/google-services.json, so nothing leaves the device. " +
+                            "To enable sign-in, sync and push, create a Firebase project, download its google-services.json " +
+                            "into app/ and rebuild (or set the GOOGLE_SERVICES_JSON_BASE64 secret for CI). See firebase/README.md.",
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = mono.textSecondary,
+                    )
+                }
+                return@item
+            }
+
+            SurfaceCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Cloud, contentDescription = null, tint = mono.textPrimary, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Cloud account", style = androidx.compose.material3.MaterialTheme.typography.titleMedium, color = mono.textPrimary)
+                    Spacer(Modifier.weight(1f))
+                    Badge(
+                        if (email != null) "linked" else "off",
+                        tone = if (email != null) ChipTone.Live else ChipTone.Broken,
+                    )
+                }
+                if (email != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("Signed in as $email", style = MonoStyleSmall, color = mono.textSecondary)
+                    Spacer(Modifier.height(10.dp))
+                    SecondaryButton("Sign out", { vm.firebaseSignOut() })
+                } else {
+                    Spacer(Modifier.height(8.dp))
+                    AuraTextField(value = fieldEmail, onValueChange = { fieldEmail = it }, placeholder = "you@example.com", textStyle = MonoStyle)
+                    Spacer(Modifier.height(8.dp))
+                    AuraTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        placeholder = "Password (6+ characters)",
+                        textStyle = MonoStyle,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        InkButton(
+                            "Create account",
+                            { vm.firebaseCreateAccount(fieldEmail, password) },
+                            modifier = Modifier.weight(1f),
+                            enabled = fieldEmail.isNotBlank() && password.length >= 6 && !busy,
+                        )
+                        SecondaryButton(
+                            "Sign in",
+                            { vm.firebaseSignIn(fieldEmail, password) },
+                            modifier = Modifier.weight(1f),
+                            enabled = fieldEmail.isNotBlank() && password.isNotBlank() && !busy,
+                        )
+                    }
+                    googleClient?.let { client ->
+                        Spacer(Modifier.height(10.dp))
+                        GhostButton("Continue with Google", { googleLauncher.launch(client.signInIntent) })
+                    }
+                }
+                if (message.isNotBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        message,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = if (message.startsWith("Sync") || message.contains("ready")) mono.successDot else mono.textSecondary,
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+
+            GroupedList(header = "Sync — last write wins") {
+                GroupedRow(
+                    title = "Sync now",
+                    subtitle = "Facts, reminders/plans and skills; sessions only if enabled below",
+                    icon = Icons.Outlined.CloudUpload,
+                    onClick = { vm.firebaseSyncNow() },
+                    isLast = true,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+
+            GroupedList(header = "Diagnostics — all off") {
+                GroupedRow(
+                    title = "Anonymous usage analytics",
+                    subtitle = "Coarse sync counts only; no text, no content",
+                    icon = Icons.Outlined.Security,
+                    trailing = { AuraSwitch(checked = settings.firebaseAnalyticsEnabled, onCheckedChange = { vm.setFirebaseToggle("analytics", it) }) },
+                    showChevron = false,
+                )
+                GroupedRow(
+                    title = "Crash reporting",
+                    subtitle = "Stack traces via Firebase Crashlytics",
+                    icon = Icons.Outlined.Warning,
+                    trailing = { AuraSwitch(checked = settings.firebaseCrashlyticsEnabled, onCheckedChange = { vm.setFirebaseToggle("crashlytics", it) }) },
+                    showChevron = false,
+                )
+                GroupedRow(
+                    title = "Session history sync",
+                    subtitle = "Goals, outcomes and the hash-only MCP audit log",
+                    icon = Icons.Outlined.Article,
+                    trailing = { AuraSwitch(checked = settings.firebaseSessionSyncEnabled, onCheckedChange = { vm.setFirebaseToggle("sessions", it) }) },
+                    showChevron = false,
+                    isLast = true,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+
+            SurfaceCard {
+                Text(
+                    "What leaves your device: nothing, until you link an account and tap Sync now. " +
+                        "Session history uploads only if you enable it above. Server-side rules " +
+                        "(firebase/firestore.rules) let each user read and write only their own " +
+                        "users/<uid>/snapshots documents; no other collection is reachable. " +
+                        "The rules are deployed by you — see firebase/README.md.",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = mono.textSecondary,
+                )
+            }
+        }
+    }
 }

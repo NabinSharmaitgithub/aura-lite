@@ -36,6 +36,9 @@ env:
   AURA_KEYSTORE_PASSWORD: ${{ secrets.AURA_KEYSTORE_PASSWORD }}
   AURA_KEY_ALIAS: ${{ secrets.AURA_KEY_ALIAS }}
   AURA_KEY_PASSWORD: ${{ secrets.AURA_KEY_PASSWORD }}
+  # Optional: a base64-encoded app/google-services.json. Without it the build is offline-only
+  # (the Google Services/Crashlytics Gradle plugins are not applied).
+  GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
 
 jobs:
   build:
@@ -103,6 +106,19 @@ jobs:
             echo "release_signing=production" >> "$GITHUB_ENV"
           else
             echo "release_signing=debug-key-fallback" >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepare optional google-services.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
+            echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > app/google-services.json
+            echo "configured OK ($(wc -c < app/google-services.json) bytes)"
+            echo "google_services_json=present" >> "$GITHUB_ENV"
+          else
+            echo "absent — building offline-only (Firebase stays disabled at runtime)"
+            echo "google_services_json=absent" >> "$GITHUB_ENV"
           fi
 
       - name: Resolve version
@@ -197,6 +213,7 @@ jobs:
             echo "| Ref | \`${GITHUB_REF}\` |"
             echo "| Version | \`1.0.${{ steps.version.outputs.code }}\` |"
             echo "| Release signing | \`${release_signing:-unknown}\` |"
+            echo "| Firebase wiring | \`${google_services_json:-unknown}\` |"
             echo "| Java | \`$(java -version 2>&1 | head -1)\` |"
             echo "| Gradle | \`$(gradle --version 2>/dev/null | grep '^Gradle ' | head -1)\` |"
             echo "| Android SDK | \`compileSdk 36, build-tools $(ls "$ANDROID_HOME/build-tools" 2>/dev/null | sort -V | tail -1)\` |"
