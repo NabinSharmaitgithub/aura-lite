@@ -161,7 +161,7 @@ class GestureInjector(
         val root = service.currentRoot() ?: return
         val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
         if (Build.VERSION.SDK_INT >= 30) {
-            focused?.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)
+            focused?.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
         }
     }
 

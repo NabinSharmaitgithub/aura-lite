@@ -251,7 +251,7 @@ class SessionLogStore @Inject constructor(@ApplicationContext context: Context) 
     }
 
     fun events(sessionId: String): List<TraceEvent> {
-        val file = File(root, sessionId, "session.jsonl")
+        val file = File(File(root, sessionId), "session.jsonl")
         if (!file.exists()) return emptyList()
         return runCatching { file.readLines().mapNotNull { TraceEvent.parse(it) } }.getOrDefault(emptyList())
     }

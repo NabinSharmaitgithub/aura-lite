@@ -167,7 +167,7 @@ class AgentRuntime @Inject constructor(
                 if (cancelRequested) break
 
                 _state.value = _state.value.copy(status = "planning", streamText = "")
-                writer.thought("Planning the next action.")
+                session.thought("Planning the next action.")
                 val response = callModel(
                     endpoint = endpoint,
                     key = key,

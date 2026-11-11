@@ -79,7 +79,7 @@ class AuraNotificationListenerService : NotificationListenerService() {
             val target = actions.firstOrNull { it.title?.toString()?.equals(action, ignoreCase = true) == true }
                 ?: actions.getOrNull(action.toIntOrNull() ?: -1)
             if (target == null) {
-                service.dismissNotification(sbn)
+                service.cancelNotification(sbn.key)
                 return ToolResult.ok(changed = true)
             }
             target.actionIntent.send()
@@ -93,7 +93,7 @@ class AuraNotificationListenerService : NotificationListenerService() {
             )
             val sbn = service.activeNotifications.firstOrNull { it.key == key }
                 ?: return ToolResult.fail(ToolError.notFound("No notification with that key"))
-            service.dismissNotification(sbn)
+            service.cancelNotification(sbn.key)
             return ToolResult.ok(changed = true)
         }
     }

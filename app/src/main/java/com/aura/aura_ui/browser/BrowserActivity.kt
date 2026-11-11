@@ -258,6 +258,7 @@ object BrowserController {
                 )
             }
             activityRef?.get()?.finish()
+            Unit
         }
     }
 
