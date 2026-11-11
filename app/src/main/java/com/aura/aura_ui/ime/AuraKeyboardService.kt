@@ -31,7 +31,7 @@ class AuraKeyboardService : InputMethodService() {
             setBackgroundColor(MonoArgb.canvas)
             setPadding(dp(20), dp(12), dp(20), dp(12))
         }
-        val hint = TextView(this).apply {
+        val hintLabel = TextView(this).apply {
             text = "Ask AURA to do something"
             setTextColor(MonoArgb.textSecondary)
             textSize = 12f
@@ -62,7 +62,7 @@ class AuraKeyboardService : InputMethodService() {
             text = "Hide keyboard"
             setOnClickListener { requestHideSelf(0) }
         }
-        root.addView(hint)
+        root.addView(hintLabel)
         root.addView(row)
         root.addView(close)
         return root

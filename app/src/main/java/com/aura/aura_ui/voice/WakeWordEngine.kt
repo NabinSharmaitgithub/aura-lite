@@ -21,18 +21,24 @@ class WakeWordEngine private constructor(
     private val spotter: KeywordSpotter,
     val keyword: String,
 ) {
+    private val stream = spotter.createStream()
+
     fun accept(samples: FloatArray, sampleRate: Int = 16000): Boolean {
-        spotter.acceptWaveform(samples, sampleRate)
+        stream.acceptWaveform(samples, sampleRate)
         var hit = false
-        while (spotter.isReady()) {
-            val result = spotter.getResult()
+        while (spotter.isReady(stream)) {
+            spotter.decode(stream)
+            val result = spotter.getResult(stream)
             if (result.keyword.isNotBlank()) hit = true
-            spotter.reset()
+            spotter.reset(stream)
         }
         return hit
     }
 
-    fun release() = runCatching { spotter.release() }
+    fun release() = runCatching {
+        stream.release()
+        spotter.release()
+    }
 
     companion object {
         /** Model files are expected under assets/kws/<name>/. */
