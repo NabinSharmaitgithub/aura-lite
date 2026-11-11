@@ -40,7 +40,7 @@ class ServerIdentity private constructor(
                 Date(now - 86_400_000L),
                 Date(now + 3650L * 86_400_000L),
                 subject,
-                keyPair.publicKey,
+                keyPair.public,
             )
             builder.addExtension(Extension.basicConstraints, true, BasicConstraints(false))
             builder.addExtension(
