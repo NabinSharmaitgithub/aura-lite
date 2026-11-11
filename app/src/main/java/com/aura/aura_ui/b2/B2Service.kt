@@ -100,7 +100,7 @@ class B2Service @Inject constructor(
         }.also {
             zipFile.delete()
         }
-        return result.fold(
+        result.fold(
             onSuccess = { it },
             onFailure = { Result.failure(it) },
         )
