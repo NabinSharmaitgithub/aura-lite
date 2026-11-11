@@ -1,3 +1,4 @@
+import java.net.URI
 import java.util.Properties
 
 plugins {
@@ -39,7 +40,7 @@ val fetchSherpaAar by tasks.registering {
         val url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVersion/" +
             "sherpa-onnx-static-link-onnxruntime-$sherpaVersion.aar"
         val downloaded = runCatching {
-            java.net.URI(url).toURL().openStream().use { input ->
+            URI(url).toURL().openStream().use { input ->
                 sherpaAar.outputStream().use { output -> input.copyTo(output) }
             }
         }.onFailure {
