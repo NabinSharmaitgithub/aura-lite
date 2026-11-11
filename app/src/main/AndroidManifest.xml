@@ -7,7 +7,7 @@
       Kotlin 2.1-only APIs on older devices, so the manifest merger is allowed to lower the
       floor. Unknown packages listed here are ignored by the merger.
     -->
-    <uses-sdk tools:overrideLibrary="ai.koog,ai.koog.agents,ai.koog.agents.core,ai.koog.prompt,ai.koog.serialization,ai.koog.embeddings,ai.koog.http.client" />
+    <uses-sdk tools:overrideLibrary="ai.koog,ai.koog.agents,ai.koog.agents.core,ai.koog.agents.android,ai.koog.koog.agents,ai.koog.prompt,ai.koog.serialization,ai.koog.embeddings,ai.koog.http.client" />
 
     <!-- Core -->
     <uses-permission android:name="android.permission.INTERNET" />

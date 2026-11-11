@@ -44,7 +44,9 @@ val fetchSherpaAar by tasks.registering {
                 sherpaAar.outputStream().use { output -> input.copyTo(output) }
             }
         }.onFailure {
-            logger.warn("sherpa-onnx download failed: ${it.message}")
+            // Avoid `logger` here: it captures the build-script object, which the configuration
+            // cache cannot serialize.
+            System.err.println("sherpa-onnx download failed: ${it.message}")
         }.isSuccess && sherpaAar.length() > 0
         if (!downloaded) {
             sherpaAar.delete()
