@@ -12,7 +12,7 @@ class MdnsAdvertiser(private val context: Context) {
     private var registrationListener: NsdManager.RegistrationListener? = null
 
     fun advertise(serviceName: String, port: Int, onRegistered: (String) -> Unit = {}) {
-        if (nsdManager == null) return
+        val manager = nsdManager ?: return
         val info = NsdServiceInfo().apply {
             this.serviceName = serviceName
             this.serviceType = "_mcp._tcp"
@@ -28,7 +28,7 @@ class MdnsAdvertiser(private val context: Context) {
             override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = Unit
         }
         registrationListener = listener
-        runCatching { nsdManager.registerService(info, NsdManager.PROTOCOL_DNS_SD, listener) }
+        runCatching { manager.registerService(info, NsdManager.PROTOCOL_DNS_SD, listener) }
     }
 
     fun stop() {

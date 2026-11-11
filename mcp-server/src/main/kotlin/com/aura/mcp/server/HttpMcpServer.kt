@@ -8,7 +8,6 @@ import com.aura.mcp.lan.TrustedDeviceStore
 import com.aura.mcp.tools.McpToolRegistry
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
-import io.ktor.server.application.applicationEnvironment
 import io.ktor.server.application.call
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.engine.sslConnector
@@ -50,7 +49,6 @@ class HttpMcpServer(
         port = requestedPort
         engine = embeddedServer(
             factory = Netty,
-            environment = applicationEnvironment { },
             configure = {
                 sslConnector(
                     keyStore = identity.keyStore,

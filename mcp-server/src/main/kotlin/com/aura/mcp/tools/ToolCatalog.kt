@@ -53,7 +53,7 @@ object ToolCatalog {
         put("items", buildJsonObject { put("type", itemType) })
     }
 
-    private fun schema(required: List<String> = emptyList(), props: Map<String, JsonObject>) = buildJsonObject {
+    private fun schema(required: List<String> = emptyList(), props: Map<String, JsonObject> = emptyMap()) = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") { props.forEach { (k, v) -> put(k, v) } }
         if (required.isNotEmpty()) {
