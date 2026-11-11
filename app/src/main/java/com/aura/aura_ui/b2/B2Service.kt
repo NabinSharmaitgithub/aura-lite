@@ -40,7 +40,7 @@ class B2Service @Inject constructor(
         val file = File(path)
         if (!file.isFile) return@withContext Result.failure(IllegalArgumentException("No readable file at $path"))
         if (file.length() > MAX_UPLOAD_BYTES) {
-            return@withContext Result.failure(IllegalArgumentException("File is larger than 100 MB"))
+            return@withContext Result.failure(IllegalArgumentException("File is larger than 10 MiB"))
         }
         // The scoped application key may only touch keys under users/ — keep every upload inside it.
         val key = objectKey?.trim()?.ifBlank { null }?.let { if (it.startsWith("users/")) it else "users/$it" } ?: "users/uploads/${file.name}"
@@ -62,7 +62,7 @@ class B2Service @Inject constructor(
             ?: File(context.filesDir, "downloads/" + objectKey.substringAfterLast('/').ifBlank { "download.bin" })
         target.parentFile?.mkdirs()
         client.download(objectKey).map { bytes ->
-            if (bytes.size > MAX_UPLOAD_BYTES) throw IllegalArgumentException("Object is larger than 100 MB")
+            if (bytes.size > MAX_UPLOAD_BYTES) throw IllegalArgumentException("Object is larger than 10 MiB")
             target.writeBytes(bytes)
             target
         }
@@ -94,7 +94,7 @@ class B2Service @Inject constructor(
         runCatching {
             zipDirectory(dir, zipFile)
             if (zipFile.length() > MAX_UPLOAD_BYTES) {
-                throw IllegalArgumentException("Export is larger than 100 MB")
+                throw IllegalArgumentException("Export is larger than 10 MiB")
             }
             client.upload("users/exports/$sessionId-$stamp.zip", zipFile.readBytes(), "application/zip")
         }.also {
@@ -105,15 +105,13 @@ class B2Service @Inject constructor(
     private fun zipDirectory(dir: File, target: File) {
         ZipOutputStream(target.outputStream().buffered()).use { zip ->
             dir.walkTopDown().filter { it.isFile }.forEach { file ->
-                val rel = file.path.removePrefix(dir.path).trimStart('/', '\').replace('\', '/')
+                val rel = file.path.removePrefix(dir.path).trimStart('/', '\\').replace('\\', '/')
                 zip.putNextEntry(ZipEntry(rel))
                 FileInputStream(file).use { it.copyTo(zip) }
                 zip.closeEntry()
             }
         }
     }
-
-    private fun String.invariantSeparatorsPath(): String = replace('\\', '/')
 
     companion object {
         /** Hard cap per object. B2 does not enforce one; AURA does (10 MiB). */
