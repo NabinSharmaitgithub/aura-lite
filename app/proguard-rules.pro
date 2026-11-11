@@ -31,4 +31,7 @@
 -dontwarn org.lz4.**
 -dontwarn org.slf4j.**
 -dontwarn org.apache.logging.log4j.**
+# Ktor optional desktop/JVM-only helpers: file-watch modifiers and JVM debug detection.
+-dontwarn com.sun.nio.file.**
+-dontwarn java.lang.management.**
 -keep class io.ktor.** { *; }
