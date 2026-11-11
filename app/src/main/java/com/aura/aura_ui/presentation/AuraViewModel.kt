@@ -1,0 +1,646 @@
+package com.aura.aura_ui.presentation
+
+import android.Manifest
+import android.app.AlarmManager
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.aura.aura_ui.accessibility.AuraAccessibilityService
+import com.aura.aura_ui.accessibility.ScreenCaptureManager
+import com.aura.aura_ui.agent.AgentRuntime
+import com.aura.aura_ui.agent.ConfirmationBroker
+import com.aura.aura_ui.agent.llm.LlmEndpoint
+import com.aura.aura_ui.agent.llm.LlmEndpointCatalog
+import com.aura.aura_ui.agent.llm.ModelCatalog
+import com.aura.aura_ui.agent.llm.ModelInfo
+import com.aura.aura_ui.agent.llm.ProviderKeyStore
+import com.aura.aura_ui.agent.research.WebSearchClient
+import com.aura.aura_ui.automation.AppEntry
+import com.aura.aura_ui.automation.AppResolver
+import com.aura.aura_ui.data.db.ReminderDao
+import com.aura.aura_ui.data.db.ReminderEntity
+import com.aura.aura_ui.data.eval.EvalCatalog
+import com.aura.aura_ui.data.eval.EvalTask
+import com.aura.aura_ui.data.learnings.LearningsStore
+import com.aura.aura_ui.data.learnings.LearningFact
+import com.aura.aura_ui.data.prefs.AuraSettings
+import com.aura.aura_ui.data.prefs.RestrictedAppsRepository
+import com.aura.aura_ui.data.prefs.SettingsSnapshot
+import com.aura.aura_ui.data.session.SessionLogStore
+import com.aura.aura_ui.data.session.SessionSummary
+import com.aura.aura_ui.data.session.TraceEvent
+import com.aura.aura_ui.data.skills.Skill
+import com.aura.aura_ui.data.skills.SkillsRepository
+import com.aura.aura_ui.overlay.AuraOverlayService
+import com.aura.aura_ui.services.AssistantForegroundService
+import com.aura.aura_ui.services.WakeWordListeningService
+import com.aura.aura_ui.voice.VoiceEngine
+import com.aura.aura_ui.voice.WakeWordEngine
+import com.aura.mcp.McpServerController
+import com.aura.mcp.McpServerHealth
+import com.aura.mcp.lan.PairingPayload
+import com.aura.mcp.lan.TrustedDevice
+import com.aura.mcp.tools.ToolCatalog
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+data class PermissionSnapshot(
+    val accessibility: Boolean = false,
+    val overlay: Boolean = false,
+    val notificationListener: Boolean = false,
+    val notifications: Boolean = false,
+    val microphone: Boolean = false,
+    val contacts: Boolean = false,
+    val batteryUnrestricted: Boolean = false,
+    val exactAlarms: Boolean = false,
+    val screenCapture: Boolean = false,
+)
+
+data class KeyVerification(
+    val ok: Boolean,
+    val message: String,
+    val modelCount: Int = 0,
+)
+
+/**
+ * One shared view model for the whole shell. Screens read the same settings revision, agent
+ * state and session list so a run started on Home keeps updating while the user is in Settings.
+ */
+@HiltViewModel
+class AuraViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val prefs: AuraSettings,
+    private val runtime: AgentRuntime,
+    private val confirmations: ConfirmationBroker,
+    private val sessions: SessionLogStore,
+    private val keyStore: ProviderKeyStore,
+    private val modelCatalog: ModelCatalog,
+    private val skillsRepository: SkillsRepository,
+    private val learnings: LearningsStore,
+    private val reminderDao: ReminderDao,
+    private val reminderScheduler: com.aura.aura_ui.agent.memory.ReminderScheduler,
+    private val mcp: McpServerController,
+    private val restricted: RestrictedAppsRepository,
+    private val voice: VoiceEngine,
+    private val capture: ScreenCaptureManager,
+    private val appResolver: AppResolver,
+    private val search: WebSearchClient,
+) : ViewModel() {
+
+    val settings: StateFlow<SettingsSnapshot> = prefs.revision
+        .map { prefs.snapshot() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.snapshot())
+
+    val agent = runtime.state
+    val confirmation = confirmations.pending
+
+    private val _sessions = MutableStateFlow<List<SessionSummary>>(emptyList())
+    val recentSessions: StateFlow<List<SessionSummary>> = _sessions.asStateFlow()
+
+    val skillList: StateFlow<List<Skill>> = skillsRepository.observe()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _facts = MutableStateFlow<List<LearningFact>>(emptyList())
+    val facts: StateFlow<List<LearningFact>> = _facts.asStateFlow()
+
+    val reminders: StateFlow<List<ReminderEntity>> = reminderDao.observePending()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _mcpHealth = MutableStateFlow(McpServerHealth())
+    val mcpHealth: StateFlow<McpServerHealth> = _mcpHealth.asStateFlow()
+
+    private val _trusted = MutableStateFlow<List<TrustedDevice>>(emptyList())
+    val trustedDevices: StateFlow<List<TrustedDevice>> = _trusted.asStateFlow()
+
+    private val _audit = MutableStateFlow<List<String>>(emptyList())
+    val auditLines: StateFlow<List<String>> = _audit.asStateFlow()
+
+    private val _models = MutableStateFlow<List<ModelInfo>>(emptyList())
+    val models: StateFlow<List<ModelInfo>> = _models.asStateFlow()
+
+    private val _modelsLoading = MutableStateFlow(false)
+    val modelsLoading: StateFlow<Boolean> = _modelsLoading.asStateFlow()
+
+    private val _verification = MutableStateFlow<KeyVerification?>(null)
+    val verification: StateFlow<KeyVerification?> = _verification.asStateFlow()
+
+    private val _notice = MutableStateFlow<String?>(null)
+    val notice: StateFlow<String?> = _notice.asStateFlow()
+
+    private val _tavilyState = MutableStateFlow<KeyVerification?>(null)
+    val tavilyState: StateFlow<KeyVerification?> = _tavilyState.asStateFlow()
+
+    private val _restrictedPackages = MutableStateFlow<Set<String>>(restricted.blockedPackages())
+    val restrictedPackages: StateFlow<Set<String>> = _restrictedPackages.asStateFlow()
+
+    private val evalCatalog = EvalCatalog(context)
+
+    val voiceListening = voice.listening
+    val voiceSpeaking = voice.speaking
+    val voiceTranscript = voice.transcript
+    val consentRequested = capture.consentRequested
+
+    val endpoints: List<LlmEndpoint> get() = LlmEndpointCatalog.all
+    val toolCount: Int get() = ToolCatalog.all.size
+    val tools get() = ToolCatalog.all
+    val wakeWordAvailable: Boolean get() = WakeWordEngine.modelsPresent(context)
+    val speechAvailable: Boolean get() = voice.isAvailable
+
+    init {
+        viewModelScope.launch {
+            skillsRepository.ensureSeeded()
+            _facts.value = learnings.facts()
+            refreshSessions()
+            refreshTrusted()
+            _mcpHealth.value = mcp.health.value
+        }
+        viewModelScope.launch {
+            mcp.health.collect { health -> _mcpHealth.value = health }
+        }
+        viewModelScope.launch {
+            restricted.revision.collect { _restrictedPackages.value = restricted.blockedPackages() }
+        }
+    }
+
+    // ── Settings ────────────────────────────────────────────────────────────────
+
+    fun updateSettings(block: (AuraSettings) -> Unit) = block(prefs)
+
+    fun setOnboardingStep(step: Int) {
+        prefs.onboardingStep = step
+    }
+
+    fun completeOnboarding() {
+        prefs.onboardingComplete = true
+    }
+
+    fun resetOnboarding() {
+        prefs.resetOnboarding()
+    }
+
+    // ── Agent ────────────────────────────────────────────────────────────────────
+
+    fun submit(goal: String) {
+        if (goal.isBlank()) return
+        AssistantForegroundService.submit(context, goal.trim())
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(600)
+            refreshSessions()
+        }
+    }
+
+    fun startListening() {
+        AssistantForegroundService.listen(context)
+    }
+
+    fun pauseRun() = runtime.pause()
+
+    fun resumeRun() = runtime.resume()
+
+    fun stopRun() {
+        runtime.stop()
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(400)
+            refreshSessions()
+        }
+    }
+
+    fun dismissRun() {
+        runtime.dismiss()
+        refreshSessions()
+    }
+
+    fun approveConfirmation() {
+        confirmation.value?.let { confirmations.respond(it.id, true) }
+    }
+
+    fun denyConfirmation() {
+        confirmation.value?.let { confirmations.respond(it.id, false) }
+    }
+
+    // ── Providers ────────────────────────────────────────────────────────────────
+
+    fun endpoint(id: String): LlmEndpoint = LlmEndpointCatalog.byId(id)
+
+    fun currentEndpoint(): LlmEndpoint {
+        val snapshot = settings.value
+        return if (snapshot.llmEndpointId == "custom") {
+            LlmEndpointCatalog.fromCustomJson(snapshot.customEndpointJson) ?: LlmEndpointCatalog.custom
+        } else {
+            LlmEndpointCatalog.byId(snapshot.llmEndpointId)
+        }
+    }
+
+    fun selectEndpoint(id: String) {
+        prefs.llmEndpointId = id
+        prefs.llmModelId = ""
+        _models.value = emptyList()
+        _verification.value = null
+        val endpoint = endpoint(id)
+        if (keyStore.has(endpoint)) fetchModels()
+    }
+
+    fun selectModel(id: String) {
+        prefs.llmModelId = id
+        _notice.value = "Model set to $id"
+    }
+
+    fun saveProviderKey(endpoint: LlmEndpoint, key: String) {
+        if (key.isBlank()) keyStore.remove(endpoint) else keyStore.save(endpoint, key)
+        _notice.value = if (key.isBlank()) "Key removed" else "Key saved locally"
+        _verification.value = null
+        if (key.isNotBlank()) fetchModels()
+    }
+
+    fun verifyProviderKey(endpoint: LlmEndpoint, key: String) {
+        viewModelScope.launch {
+            val candidate = key.ifBlank { keyStore.keyFor(endpoint).orEmpty() }
+            if (candidate.isBlank()) {
+                _verification.value = KeyVerification(false, "Enter a key first")
+                return@launch
+            }
+            _modelsLoading.value = true
+            val result = modelCatalog.fetch(endpoint, candidate)
+            _modelsLoading.value = false
+            result.onSuccess { list ->
+                _models.value = list
+                _verification.value = KeyVerification(
+                    ok = true,
+                    message = if (list.isEmpty()) "Key accepted · no models returned" else "Key verified",
+                    modelCount = list.size,
+                )
+                if (list.isNotEmpty() && settings.value.llmModelId.isBlank()) {
+                    prefs.llmModelId = endpoint.defaultModelId
+                        ?.takeIf { id -> list.any { it.id == id } }
+                        ?: list.first().id
+                }
+            }.onFailure { error ->
+                _verification.value = KeyVerification(false, error.message ?: "Verification failed")
+            }
+        }
+    }
+
+    fun fetchModels() {
+        val endpoint = currentEndpoint()
+        val key = keyStore.keyFor(endpoint).orEmpty()
+        if (key.isBlank()) {
+            _notice.value = "Add a key to load models"
+            return
+        }
+        viewModelScope.launch {
+            _modelsLoading.value = true
+            modelCatalog.fetch(endpoint, key)
+                .onSuccess { list ->
+                    _models.value = list
+                    if (_verification.value == null) {
+                        _verification.value = KeyVerification(true, "Key verified", list.size)
+                    }
+                }
+                .onFailure { error ->
+                    _verification.value = KeyVerification(false, error.message ?: "Could not load models")
+                }
+            _modelsLoading.value = false
+        }
+    }
+
+    fun keyHint(endpoint: LlmEndpoint): String? = keyStore.hint(endpoint)
+
+    fun hasKey(endpoint: LlmEndpoint): Boolean = keyStore.has(endpoint)
+
+    fun setTemperature(value: Float) {
+        prefs.temperature = value
+    }
+
+    fun setMaxSteps(value: Int) {
+        prefs.maxSteps = value
+    }
+
+    fun saveCustomEndpoint(raw: String) {
+        val parsed = LlmEndpointCatalog.fromCustomJson(raw)
+        if (parsed == null || parsed.baseUrl.isBlank()) {
+            _notice.value = "Custom endpoint JSON needs at least baseUrl"
+            return
+        }
+        prefs.customEndpointJson = raw.trim()
+        prefs.llmEndpointId = "custom"
+        _notice.value = "Custom endpoint saved"
+        if (keyStore.has(parsed)) fetchModels()
+    }
+
+    fun saveSystemPromptOverride(text: String) {
+        prefs.systemPromptOverride = text.trim()
+        _notice.value = if (text.isBlank()) "Using the built-in system prompt" else "System prompt override saved"
+    }
+
+    // ── Skills / memory ──────────────────────────────────────────────────────────
+
+    fun setSkillEnabled(skill: Skill, enabled: Boolean) {
+        viewModelScope.launch { skillsRepository.setEnabled(skill.id, enabled) }
+    }
+
+    fun importSkill(raw: String) {
+        viewModelScope.launch {
+            _notice.value = if (skillsRepository.import(raw)) "Skill imported" else "That skill file could not be parsed"
+        }
+    }
+
+    fun deleteSkill(skill: Skill) {
+        viewModelScope.launch {
+            skillsRepository.delete(skill.id)
+            _notice.value = "Skill deleted"
+        }
+    }
+
+    fun addFact(text: String, scope: String = "global") {
+        if (text.isBlank()) return
+        learnings.add(
+            LearningFact(
+                id = "l_" + System.currentTimeMillis().toString(36),
+                scope = scope.ifBlank { "global" },
+                text = text.trim(),
+                confidence = 1f,
+                sources = listOf("manual"),
+            ),
+        )
+        _facts.value = learnings.facts()
+        _notice.value = "Added to memory"
+    }
+
+    fun deleteFact(fact: LearningFact) {
+        learnings.delete(fact.id)
+        _facts.value = learnings.facts()
+    }
+
+    fun clearFacts(scope: String? = null) {
+        learnings.clear(scope)
+        _facts.value = learnings.facts()
+    }
+
+    fun addReminder(text: String, minutesFromNow: Int) {
+        if (text.isBlank()) return
+        viewModelScope.launch {
+            val at = System.currentTimeMillis() + minutesFromNow.coerceAtLeast(1) * 60_000L
+            reminderScheduler.schedule(text.trim(), at)
+            _notice.value = "Reminder set"
+        }
+    }
+
+    fun deleteReminder(reminder: ReminderEntity) {
+        viewModelScope.launch {
+            reminderScheduler.cancel(reminder.id)
+            reminderDao.delete(reminder.id)
+        }
+    }
+
+    fun corrections(): List<Pair<String, String>> = learnings.corrections()
+
+    fun clearCorrections() {
+        learnings.clearCorrections()
+        _notice.value = "Voice corrections cleared"
+    }
+
+    // ── Sessions ─────────────────────────────────────────────────────────────────
+
+    fun refreshSessions() {
+        viewModelScope.launch {
+            _sessions.value = withContext(Dispatchers.IO) { sessions.sessions(100) }
+        }
+    }
+
+    fun sessionEvents(sessionId: String): List<TraceEvent> = sessions.events(sessionId)
+
+    fun deleteSession(sessionId: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { sessions.delete(sessionId) }
+            refreshSessions()
+        }
+    }
+
+    fun pruneSessions() {
+        viewModelScope.launch {
+            val removed = withContext(Dispatchers.IO) { sessions.prune(settings.value.logRetentionDays) }
+            _notice.value = "Pruned $removed session${if (removed == 1) "" else "s"}"
+            refreshSessions()
+        }
+    }
+
+    fun clearSessions() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                sessions.sessions(Int.MAX_VALUE).forEach { sessions.delete(it.id) }
+            }
+            _notice.value = "All session logs deleted"
+            refreshSessions()
+        }
+    }
+
+    fun usageBytes(): Long = sessions.usageBytes()
+
+    fun relativeTime(t: Long): String = sessions.relativeTime(t)
+
+    fun screenshotFor(sessionId: String, name: String) = sessions.screenshotFile(sessionId, name)
+
+    // ── MCP ─────────────────────────────────────────────────────────────────────
+
+    fun startMcpServer() {
+        val port = settings.value.mcpPort
+        val health = mcp.start(port)
+        _mcpHealth.value = health
+        prefs.mcpEnabled = health.running
+        refreshTrusted()
+        _audit.value = mcp.auditLines(80)
+        if (!health.running) _notice.value = health.lastError ?: "Server could not start"
+    }
+
+    fun stopMcpServer() {
+        mcp.stop()
+        prefs.mcpEnabled = false
+        _mcpHealth.value = mcp.health.value
+    }
+
+    fun setMcpPort(port: Int) {
+        prefs.mcpPort = port
+        if (mcp.isRunning) {
+            mcp.stop()
+            startMcpServer()
+        }
+    }
+
+    fun beginPairing(): PairingPayload? {
+        if (!mcp.isRunning) startMcpServer()
+        val payload = mcp.pairingPayload()
+        refreshTrusted()
+        return payload
+    }
+
+    fun refreshTrusted() {
+        _trusted.value = mcp.trustedDevices()
+    }
+
+    fun revokeDevice(clientId: String) {
+        mcp.revoke(clientId)
+        refreshTrusted()
+    }
+
+    fun refreshAudit() {
+        _audit.value = mcp.auditLines(80)
+    }
+
+    // ── Restricted apps ─────────────────────────────────────────────────────────
+
+    fun installedApps(): List<AppEntry> = appResolver.installedApps()
+
+    fun setRestricted(packageName: String, blocked: Boolean) {
+        restricted.setBlocked(packageName, blocked)
+        _restrictedPackages.value = restricted.blockedPackages()
+    }
+
+    // ── Search key ──────────────────────────────────────────────────────────────
+
+    fun saveTavilyKey(key: String) {
+        keyStore.tavilyKey = key
+        _tavilyState.value = null
+        _notice.value = if (key.isBlank()) "Search key removed" else "Search key saved"
+    }
+
+    fun tavilyKeyHint(): String? = keyStore.tavilyKey?.let { key ->
+        if (key.length <= 8) "••••" else key.take(4) + "••••" + key.takeLast(4)
+    }
+
+    fun verifyTavily() {
+        viewModelScope.launch {
+            val result = search.search("AURA connectivity check", 1)
+            _tavilyState.value = if (result.ok) {
+                KeyVerification(true, "Tavily key works")
+            } else {
+                KeyVerification(false, result.error?.message ?: "Tavily verification failed")
+            }
+        }
+    }
+
+    // ── Voice ────────────────────────────────────────────────────────────────────
+
+    fun setWakeWord(enabled: Boolean): Boolean {
+        if (enabled && !wakeWordAvailable) {
+            prefs.wakeWordEnabled = false
+            _notice.value = "Wake-word model is not bundled. Add assets/kws to enable it."
+            return false
+        }
+        if (enabled && !permissions().microphone) {
+            prefs.wakeWordEnabled = false
+            _notice.value = "Microphone permission is required for the wake word."
+            return false
+        }
+        prefs.wakeWordEnabled = enabled
+        if (enabled) WakeWordListeningService.start(context) else WakeWordListeningService.stop(context)
+        return true
+    }
+
+    fun setCompanionEnabled(enabled: Boolean) {
+        prefs.companionEnabled = enabled
+        val intent = Intent(context, AuraOverlayService::class.java)
+        if (enabled) {
+            if (Settings.canDrawOverlays(context)) {
+                runCatching { context.startForegroundService(intent) }
+            } else {
+                prefs.companionEnabled = false
+                _notice.value = "Allow display over other apps to use the companion overlay."
+            }
+        } else {
+            runCatching { context.stopService(intent) }
+        }
+    }
+
+    fun speak(text: String) {
+        if (text.isNotBlank()) voice.speak(text)
+    }
+
+    fun ttsVoices(): List<String> = voice.voices()
+
+    fun stopSpeaking() {
+        voice.stopSpeaking()
+    }
+
+    fun requestScreenCapture() {
+        capture.requestConsent()
+    }
+
+    fun consentIntent(): Intent = capture.createConsentIntent()
+
+    fun handleConsentResult(resultCode: Int, data: Intent?) {
+        capture.handleConsentResult(resultCode, data)
+        prefs.screenCaptureEnabled = capture.hasConsent()
+    }
+
+    // ── Permissions / environment ────────────────────────────────────────────────
+
+    fun permissions(): PermissionSnapshot {
+        val power = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        return PermissionSnapshot(
+            accessibility = AuraAccessibilityService.isEnabled(context),
+            overlay = Settings.canDrawOverlays(context),
+            notificationListener = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName),
+            notifications = Build.VERSION.SDK_INT < 33 ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
+            microphone = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED,
+            contacts = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED,
+            batteryUnrestricted = power.isIgnoringBatteryOptimizations(context.packageName),
+            exactAlarms = Build.VERSION.SDK_INT < 31 || alarm.canScheduleExactAlarms(),
+            screenCapture = capture.hasConsent(),
+        )
+    }
+
+    fun isOnline(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    fun packageVersion(): String = runCatching {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
+    }.getOrDefault("dev")
+
+    // ── Eval / notices ─────────────────────────────────────────────────────────
+
+    fun evalTasks(): List<EvalTask> = evalCatalog.tasks()
+
+    fun validateEval(tasks: List<EvalTask>): List<String> {
+        val known = ToolCatalog.byName.keys
+        return tasks.flatMap { task ->
+            task.expectedTools.filterNot { it in known }.map { "${task.id}: unknown tool `$it`" }
+        }
+    }
+
+    fun runEvalTask(task: EvalTask) {
+        submit(task.goal)
+    }
+
+    fun showNotice(message: String) {
+        _notice.value = message
+    }
+
+    fun clearNotice() {
+        _notice.value = null
+    }
+}

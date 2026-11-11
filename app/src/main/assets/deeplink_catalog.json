@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "note": "Known deep links used by resolve_deeplink and list_app_deeplinks. Packages are resolved live; these are hints, not a whitelist.",
+  "links": [
+    { "package": "com.android.settings", "uri": "android.settings.WIFI_SETTINGS", "label": "Wi-Fi settings" },
+    { "package": "com.android.settings", "uri": "android.settings.BLUETOOTH_SETTINGS", "label": "Bluetooth settings" },
+    { "package": "com.android.settings", "uri": "android.settings.APPLICATION_DETAILS_SETTINGS", "label": "App info" },
+    { "package": "com.google.android.apps.maps", "uri": "geo:0,0?q=", "label": "Maps search" },
+    { "package": "com.google.android.apps.maps", "uri": "google.navigation:q=", "label": "Maps navigation" },
+    { "package": "com.whatsapp", "uri": "https://wa.me/", "label": "WhatsApp chat" },
+    { "package": "com.google.android.gm", "uri": "mailto:", "label": "Compose email" },
+    { "package": "com.android.chrome", "uri": "https://", "label": "Browser" },
+    { "package": "com.google.android.dialer", "uri": "tel:", "label": "Dialer" },
+    { "package": "com.google.android.apps.messaging", "uri": "smsto:", "label": "Messages" },
+    { "package": "com.google.android.youtube", "uri": "vnd.youtube:", "label": "YouTube" },
+    { "package": "com.spotify.music", "uri": "spotify:", "label": "Spotify" }
+  ]
+}

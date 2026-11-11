@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "id": "send_photo",
+      "name": "Send a photo",
+      "version": 1,
+      "trigger": "the user asks to share a picture",
+      "steps": ["open Photos", "long-press the target photo", "tap Share", "choose the messaging app", "pick the contact", "send"],
+      "tools": ["launch_app", "read_screen", "tap", "type_text", "verify_action"],
+      "guardrails": ["confirm before sending", "never pick a contact that was not named"]
+    },
+    {
+      "id": "navigate_home",
+      "name": "Navigate home",
+      "version": 1,
+      "trigger": "the user asks for directions home",
+      "steps": ["open Maps", "tap search", "type the saved home address", "select the first result", "start navigation"],
+      "tools": ["launch_app", "read_screen", "set_value", "tap", "verify_action"],
+      "guardrails": ["never start navigation while driving is detected", "confirm the destination before starting"]
+    },
+    {
+      "id": "quiet_phone",
+      "name": "Quiet the phone",
+      "version": 1,
+      "trigger": "the user asks to silence the phone",
+      "steps": ["turn on Do Not Disturb", "lower the media volume", "confirm the new state"],
+      "tools": ["system_intent", "volume", "get_device_status"],
+      "guardrails": ["reversible actions only", "report the exact new volume"]
+    },
+    {
+      "id": "reply_whatsapp",
+      "name": "Reply on WhatsApp",
+      "version": 1,
+      "trigger": "the user asks to reply to a named person on WhatsApp",
+      "steps": ["resolve the contact phonetically", "open the chat", "read the last message", "type the reply", "stop before send"],
+      "tools": ["resolve_contact", "launch_app", "read_screen", "set_value", "verify_action"],
+      "guardrails": ["never send without an explicit confirmation", "do not guess a contact on a weak match"]
+    },
+    {
+      "id": "find_download",
+      "name": "Find a downloaded file",
+      "version": 1,
+      "trigger": "the user asks where a recent download is",
+      "steps": ["search Downloads for the name", "narrow by MIME type", "report the newest match", "open only on request"],
+      "tools": ["find_files", "open_file"],
+      "guardrails": ["do not open an executable file", "report ambiguity instead of choosing silently"]
+    },
+    {
+      "id": "receipt_capture",
+      "name": "Capture a receipt",
+      "version": 1,
+      "trigger": "the user asks to save or read a receipt",
+      "steps": ["request screen capture consent if needed", "capture one frame", "read the text", "report the total and date"],
+      "tools": ["request_screen_capture_permission", "get_screenshot", "perceive_screen"],
+      "guardrails": ["never upload the screenshot unless the user attached it to a run", "delete the frame when done"]
+    },
+    {
+      "id": "book_ride",
+      "name": "Start a ride booking",
+      "version": 1,
+      "trigger": "the user asks for a ride",
+      "steps": ["open the ride app", "enter the destination", "read the price", "stop before confirming the ride"],
+      "tools": ["launch_app", "read_screen", "set_value", "tap"],
+      "guardrails": ["never confirm a payment or a ride without explicit confirmation", "report the quoted price first"]
+    },
+    {
+      "id": "browser_research",
+      "name": "Research in the browser",
+      "version": 1,
+      "trigger": "the user asks for a fact that needs a web page",
+      "steps": ["open the browser", "navigate to the page", "read the main content", "extract the answer with its source"],
+      "tools": ["browser_open", "browser_read", "browser_extract", "browser_close"],
+      "guardrails": ["cite the URL", "never submit a form or a purchase"]
+    }
+  ]
+}

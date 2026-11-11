@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include domain="sharedpref" path="aura_settings.xml" />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="file" path="sessions/" />
+    <exclude domain="database" path="aura.db" />
+</full-backup-content>
