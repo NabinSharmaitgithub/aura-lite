@@ -82,6 +82,7 @@ fun AuraHomeScreen(
     val listening by vm.voiceListening.collectAsStateWithLifecycle()
     val permissions = rememberPermissions(vm)
     val askPending by vm.askPending.collectAsStateWithLifecycle()
+    val interruptedGoal by vm.interruptedGoal.collectAsStateWithLifecycle()
 
     var goal by remember { mutableStateOf("") }
     val endpoint = vm.currentEndpoint()
@@ -101,6 +102,16 @@ fun AuraHomeScreen(
         contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
+        if (interruptedGoal != null && !agent.running) {
+            item {
+                InterruptedRunCard(
+                    goal = interruptedGoal!!,
+                    onResume = { vm.resumeInterruptedRun() },
+                    onDismiss = { vm.dismissInterruptedRun() },
+                )
+                Spacer(Modifier.height(18.dp))
+            }
+        }
         if (askPending != null) {
             item {
                 PendingQuestionCard(
@@ -339,6 +350,40 @@ fun AuraHomeScreen(
     }
 }
 
+
+
+@Composable
+private fun InterruptedRunCard(
+    goal: String,
+    onResume: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val mono = LocalMonoScheme.current
+    SurfaceCard(contentPadding = PaddingValues(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "A run was interrupted",
+                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                    color = mono.textPrimary,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    goal,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = mono.textSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GhostButton("Dismiss", onDismiss, color = mono.blood)
+            InkButton("Resume", onResume, modifier = Modifier.weight(1f))
+        }
+    }
+}
 
 @Composable
 private fun PendingQuestionCard(
