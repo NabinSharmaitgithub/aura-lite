@@ -4,11 +4,14 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.aura.aura_ui.services.AssistantForegroundService
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -38,6 +41,8 @@ class AuraAccessibilityService : AccessibilityService() {
     private val _signals = MutableSharedFlow<AccessibilitySignal>(extraBufferCapacity = 64)
     val signals: SharedFlow<AccessibilitySignal> = _signals.asSharedFlow()
 
+    private var lastVolumeDownAt = 0L
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
@@ -46,10 +51,25 @@ class AuraAccessibilityService : AccessibilityService() {
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
                 AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
-                AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+                AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
             notificationTimeout = 80
         }
         ScreenGeneration.reset()
+    }
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            val now = System.currentTimeMillis()
+            if (now - lastVolumeDownAt in 80..600) {
+                lastVolumeDownAt = 0L
+                runCatching { AssistantForegroundService.listen(this) }
+                // Don't consume so system volume behavior remains usable; shortcut is double-press.
+            } else {
+                lastVolumeDownAt = now
+            }
+        }
+        return super.onKeyEvent(event)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {

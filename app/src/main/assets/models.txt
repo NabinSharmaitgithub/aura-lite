@@ -1,0 +1,19 @@
+# Voice model downloads for AURA Lite
+#
+# One entry per line:
+#   <relative-path-from-app/src/main/assets> <direct-download-url>
+#
+# The official model index is at:
+#   https://k2-fsa.github.io/sherpa/onnx/kws/pretrained_models/index.html
+# Pick a Zipformer KWS model (English, ~3-4 MB) and copy its file URLs here.
+# Archives (.tar.bz2 / .zip) are NOT unpacked automatically — place the extracted
+# files (encoder.onnx, decoder.onnx, joiner.onnx, tokens.txt, keywords.txt) as
+# entries below and they will be downloaded one-by-one.  Example:
+#   kws/encoder.onnx   https://hf.aliyunmodel.com/.../kws/encoder.onnx
+#   kws/decoder.onnx   https://hf.aliyunmodel.com/.../kws/decoder.onnx
+#   kws/joiner.onnx    https://hf.aliyunmodel.com/.../kws/joiner.onnx
+#   kws/tokens.txt     https://hf.aliyunmodel.com/.../kws/tokens.txt
+#   kws/keywords.txt   https://hf.aliyunmodel.com/.../kws/keywords.txt
+#
+# When this file is empty or a download fails, the build still succeeds and the
+# voice layer reports itself unavailable instead of crashing.

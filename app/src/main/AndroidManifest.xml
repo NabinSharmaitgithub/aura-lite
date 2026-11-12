@@ -92,6 +92,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="aura" android:host="mcp" android:pathPrefix="/oauth" />
             </intent-filter>
+            <!-- Android assistant gesture / default assist -->
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <service

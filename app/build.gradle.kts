@@ -62,6 +62,54 @@ val fetchSherpaAar by tasks.registering {
 }
 tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(fetchSherpaAar) }
 
+/**
+ * Fetches voice model assets listed in `app/src/main/assets/models.txt`.
+ * Format: one entry per line `<target-path-relative-to-assets> <url> [# comment]`.
+ * Missing entries, empty file, or download failure all log a warning and continue — the build
+ * never fails on model download; [VoiceEngine] and [WakeWordEngine] degrade cleanly without them.
+ *
+ * The official model index lives at:
+ *   https://k2-fsa.github.io/sherpa/onnx/kws/pretrained_models/index.html
+ * Pick a KWS model zip/tar.bz2, list its files here, and rebuild.
+ * Example models.txt entry:
+ *   kws/encoder.onnx https://example.com/kws/encoder.onnx
+ */
+val modelsTxt = file("src/main/assets/models.txt")
+val fetchSherpaModels by tasks.registering {
+    outputs.upToDateWhen {
+        // considered up-to-date when every [[target]] already exists in the apk assets
+        !modelsTxt.exists() || modelsTxt.readLines().filter { it.isNotBlank() && !it.trim().startsWith("#") }.all { line ->
+            val target = line.trim().substringBefore(' ')
+            file("src/main/assets/$target").exists()
+        }
+    }
+    doLast {
+        if (!modelsTxt.exists() || modelsTxt.readText().isBlank()) {
+            System.err.println("voice models not listed — see app/src/main/assets/models.txt and docs/DECISIONS.md")
+            return@doLast
+        }
+        val assetsDir = file("src/main/assets")
+        modelsTxt.readLines().forEach { raw ->
+            val line = raw.trim()
+            if (line.isEmpty() || line.startsWith("#")) return@forEach
+            val parts = line.split(Regex("\\s+"), 2)
+            if (parts.size != 2) { System.err.println("models.txt: bad line: $raw"); return@forEach }
+            val (target, url) = parts
+            val dest = File(assetsDir, target.removePrefix("/"))
+            if (dest.exists()) { System.err.println("voice model already present: $target"); return@forEach }
+            dest.parentFile?.mkdirs()
+            runCatching {
+                URI(url).toURL().openStream().use { input -> dest.outputStream().use { out -> input.copyTo(out) } }
+                System.err.println("fetched voice model: $target (${dest.length()} bytes)")
+            }.onFailure {
+                dest.delete()
+                System.err.println("voice model download failed for $target: ${it.message} (voice disabled)")
+            }
+        }
+    }
+}
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(fetchSherpaModels) }
+
 android {
     namespace = "com.aura.aura_ui"
     compileSdk = 36

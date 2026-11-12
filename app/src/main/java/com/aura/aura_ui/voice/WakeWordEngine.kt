@@ -11,11 +11,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Offline wake word ("hey aura") via sherpa-onnx keyword spotting.
+ * Offline wake word via sherpa-onnx keyword spotting.
  *
- * The model files live in assets/kws and are copied to the files dir on first use. If they are
- * absent the engine reports [available] = false and the wake service never starts, so a missing
- * model can never strand a microphone foreground service.
+ * Default phrase target: "Wake up AURA" (configured via assets/kws/keywords.txt in the
+ * bundled sherpa-onnx KWS model). The model files live in assets/kws and are copied to the
+ * files dir on first use. If they are absent the engine reports [available] = false and the
+ * wake service never starts, so a missing model can never strand a microphone foreground service.
  */
 class WakeWordEngine private constructor(
     private val spotter: KeywordSpotter,
@@ -67,13 +68,33 @@ class WakeWordEngine private constructor(
                     }
                 }
             }
+            // Allow updating keywords.txt/lexicon config without forcing model re-extract of ONNXs
+            runCatching {
+                context.assets.open("$modelDir/keywords.txt").use { input ->
+                    File(target, "keywords.txt").outputStream().use { output -> input.copyTo(output) }
+                }
+            }
             return target
+        }
+
+        fun configuredKeywordLabel(context: Context, modelDir: String = "kws"): String {
+            val fromAssets = runCatching {
+                context.assets.open("$modelDir/keywords.txt").bufferedReader().use { br ->
+                    br.readLines().firstOrNull { it.isNotBlank() }?.substringBefore("@")?.trim()
+                }
+            }.getOrNull()
+            val fromFiles = runCatching {
+                val f = File(context.filesDir, "kws/keywords.txt")
+                if (f.exists()) f.readLines().firstOrNull { it.isNotBlank() }?.substringBefore("@")?.trim() else null
+            }.getOrNull()
+            return (fromAssets ?: fromFiles)?.ifBlank { null } ?: "Wake up AURA"
         }
 
         suspend fun create(context: Context, sampleRate: Int = 16000): WakeWordEngine? = withContext(Dispatchers.IO) {
             if (!modelsPresent(context)) return@withContext null
             runCatching {
                 val dir = ensureExtracted(context)
+                val keywordLabel = configuredKeywordLabel(context)
                 val config = KeywordSpotterConfig(
                     featConfig = FeatureConfig(sampleRate = sampleRate, featureDim = 80),
                     modelConfig = OnlineModelConfig(
@@ -92,7 +113,7 @@ class WakeWordEngine private constructor(
                     numTrailingBlanks = 1,
                     maxActivePaths = 4,
                 )
-                WakeWordEngine(KeywordSpotter(config = config), keyword = "hey aura")
+                WakeWordEngine(KeywordSpotter(config = config), keyword = keywordLabel)
             }.getOrNull()
         }
     }
