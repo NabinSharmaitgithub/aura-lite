@@ -6,6 +6,7 @@ import com.aura.mcp.bridge.ToolError
 import com.aura.mcp.bridge.ToolResult
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
