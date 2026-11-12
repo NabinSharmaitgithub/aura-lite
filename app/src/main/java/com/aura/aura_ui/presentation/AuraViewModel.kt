@@ -402,6 +402,18 @@ class AuraViewModel @Inject constructor(
     }
 
     fun startListening() {
+        val hasMic = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.RECORD_AUDIO,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasMic) {
+            showNotice("Microphone permission is off. Open Settings → Permissions and grant it.")
+            return
+        }
+        if (!voice.isAvailable) {
+            showNotice("Speech recognition is not available on this device.")
+            return
+        }
         AssistantForegroundService.listen(context)
     }
 

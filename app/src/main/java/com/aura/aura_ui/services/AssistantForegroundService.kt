@@ -54,16 +54,37 @@ class AssistantForegroundService : Service() {
     }
 
     private fun beginListening() {
+        val hasMic = androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasMic) {
+            notify(
+                AuraNotifications.DPI_NO_MIC,
+                "Microphone permission is off",
+                "Open Settings → Permissions and grant Microphone to use voice.",
+            )
+            stopIfIdle()
+            return
+        }
         if (listenJob?.isActive == true) return
         listenJob = scope.launch {
             val result = voice.listen()
             result.onSuccess { transcript ->
                 if (transcript.isNotBlank()) runtime.submit(transcript, voice = true)
                 else stopIfIdle()
-            }.onFailure {
+            }.onFailure { error ->
+                notify(
+                    AuraNotifications.DPI_FAILURE,
+                    "Voice capture failed",
+                    error.message ?: "The microphone could not be used right now.",
+                )
                 stopIfIdle()
             }
         }
+    }
+
+    private fun notify(id: Int, title: String, body: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.notify(id, AuraNotifications.agentFailureNotification(this, title, body))
     }
 
     private fun observeRuntime() {
