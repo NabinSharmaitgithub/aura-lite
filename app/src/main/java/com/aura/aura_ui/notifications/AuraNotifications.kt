@@ -26,6 +26,7 @@ object AuraNotifications {
     const val ID_APPROVAL = 2001
     const val ID_FCM = 2002
     const val ID_INTERRUPTED = 3001
+    const val ID_PROJECTION = 2003
     const val DPI_NO_MIC = 3004
     const val DPI_FAILURE = 3005
 
@@ -72,6 +73,16 @@ object AuraNotifications {
             .setContentTitle(title)
             .setContentText(body.take(160))
             .setAutoCancel(true)
+            .setContentIntent(openApp(context))
+            .build()
+
+    fun projectionNotification(context: Context): Notification =
+        NotificationCompat.Builder(context, CHANNEL_MCP)
+            .setSmallIcon(R.drawable.ic_aura_mark)
+            .setContentTitle("AURA is preparing screen capture")
+            .setContentText("Grant access when the permission dialog appears.")
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setContentIntent(openApp(context))
             .build()
 

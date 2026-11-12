@@ -42,6 +42,7 @@ import com.aura.aura_ui.data.session.SessionSummary
 import com.aura.aura_ui.data.session.TraceEvent
 import com.aura.aura_ui.data.skills.Skill
 import com.aura.aura_ui.data.skills.SkillsRepository
+import com.aura.aura_ui.services.MediaProjectionService
 import com.aura.aura_ui.overlay.AuraOverlayService
 import com.aura.aura_ui.services.AssistantForegroundService
 import com.aura.aura_ui.services.WakeWordListeningService
@@ -786,6 +787,9 @@ class AuraViewModel @Inject constructor(
     }
 
     fun requestScreenCapture() {
+        // Android 14+ requires a running foreground service of type `mediaProjection`
+        // before consent is requested and before MediaProjection is created.
+        MediaProjectionService.start(context)
         capture.requestConsent()
     }
 
@@ -794,6 +798,9 @@ class AuraViewModel @Inject constructor(
     fun handleConsentResult(resultCode: Int, data: Intent?) {
         capture.handleConsentResult(resultCode, data)
         prefs.screenCaptureEnabled = capture.hasConsent()
+        if (!prefs.screenCaptureEnabled) {
+            MediaProjectionService.stop(context)
+        }
     }
 
     // ── Permissions / environment ────────────────────────────────────────────────
