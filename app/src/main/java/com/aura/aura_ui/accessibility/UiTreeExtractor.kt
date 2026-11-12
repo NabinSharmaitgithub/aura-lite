@@ -106,17 +106,8 @@ class UiTreeExtractor(
         return next
     }
 
-    fun toJson(snapshot: ScreenSnapshot, includeBounds: Boolean = true): JsonObject = buildJsonObject {
-        put("package", snapshot.packageName)
-        put("summary", snapshot.summary)
-        put("generation", snapshot.generation)
-        put("screen_generation", snapshot.generation)
-        put("screen_signature", snapshot.hash.toString())
-        put("changed", snapshot.changed)
-        put("node_count", snapshot.nodes.size)
-        put(
-            "nodes",
-            buildJsonArray {
+    fun toJson(snapshot: ScreenSnapshot, includeBounds: Boolean = true): JsonObject {
+        val nodesArray = buildJsonArray {
                 snapshot.nodes.forEach { node ->
                     add(
                         buildJsonObject {
@@ -146,10 +137,18 @@ class UiTreeExtractor(
                         },
                     )
                 }
-            },
-        )
+            }
+        return buildJsonObject {
+        put("package", snapshot.packageName)
+        put("summary", snapshot.summary)
+        put("generation", snapshot.generation)
+        put("screen_generation", snapshot.generation)
+        put("screen_signature", snapshot.hash.toString())
+        put("changed", snapshot.changed)
+        put("node_count", snapshot.nodes.size)
+        put("nodes", nodesArray)
         // compact list alias for consumers expecting element arrays
-        put("elements", this["nodes"] ?: buildJsonArray { })
+        put("elements", nodesArray)
     }
 
     fun stableKey(snapshot: ScreenSnapshot): String =
