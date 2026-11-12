@@ -136,6 +136,22 @@ class AuraViewModel @Inject constructor(
     private val _sessions = MutableStateFlow<List<SessionSummary>>(emptyList())
     val recentSessions: StateFlow<List<SessionSummary>> = _sessions.asStateFlow()
 
+    /** The interrupted goal from the last run that ended abruptly, if any. */
+    val interruptedGoal: StateFlow<String?> = MutableStateFlow(sessions.readInterruption()?.second).asStateFlow()
+
+    /** Resume the goal that was interrupted, clearing the marker. */
+    fun resumeInterruptedRun() {
+        val goal = interruptedGoal.value ?: return
+        sessions.clearInterruption()
+        submit(goal)
+    }
+
+    /** Dismiss the interrupted-run banner. */
+    fun dismissInterruptedRun() {
+        sessions.clearInterruption()
+        (interruptedGoal as MutableStateFlow).value = null
+    }
+
     val reportStats: StateFlow<ReportStats> = _sessions.map { list ->
         val finished = list.filter { it.endedAt != null }
         val success = finished.count { it.outcome == SessionOutcome.SUCCESS }
