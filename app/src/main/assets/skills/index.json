@@ -72,6 +72,33 @@
       "steps": ["open the browser", "navigate to the page", "read the main content", "extract the answer with its source"],
       "tools": ["browser_open", "browser_read", "browser_extract", "browser_close"],
       "guardrails": ["cite the URL", "never submit a form or a purchase"]
+    },
+    {
+      "id": "research_the_web",
+      "name": "Research a task before acting",
+      "version": 1,
+      "trigger": "a task in an unfamiliar app or an undocumented flow",
+      "steps": ["web_search for how the task is done in this app", "read the steps", "act with verify steps between each action"],
+      "tools": ["web_search", "perceive_screen", "tap", "verify_action"],
+      "guardrails": ["never act on a guess — look or ask first", "verify the search result matches the real app version"]
+    },
+    {
+      "id": "act_without_screen",
+      "name": "Act without a mapped screen",
+      "version": 1,
+      "trigger": "a new app or settings page with no recorded layout",
+      "steps": ["navigate by deep link or system_intent if one exists", "perceive_screen", "pick actions consistent with the visible UI tree only"],
+      "tools": ["open_deeplink", "system_intent", "perceive_screen", "verify_action"],
+      "guardrails": ["do not tap any element you cannot see", "stop and ask_user if the tree is ambiguous"]
+    },
+    {
+      "id": "aura_skill_doctrine",
+      "name": "How to run a task well",
+      "version": 1,
+      "trigger": "any multi-step goal",
+      "steps": ["research the task if anything is unfamiliar", "form a written plan", "act and verify each step", "report the outcome and the evidence"],
+      "tools": ["web_search", "perceive_screen", "run_steps", "verify_action", "end_session"],
+      "guardrails": ["never report success without evidence", "always end_session with outcome and summary"]
     }
   ]
 }

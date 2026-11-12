@@ -26,7 +26,13 @@ class FirebaseRemoteConfigManager @Inject constructor(
                         .setMinimumFetchIntervalInSeconds(3600L)
                         .build(),
                 )
-                setDefaultsAsync(mapOf("aura_sync_paused" to false))
+                setDefaultsAsync(
+                    mapOf(
+                        "aura_sync_paused" to false,
+                        "kill_switch_enabled" to false,
+                        "min_supported_version_code" to 0L,
+                    ),
+                )
             }
         }.getOrNull()
     }
@@ -39,4 +45,10 @@ class FirebaseRemoteConfigManager @Inject constructor(
 
     fun syncPaused(): Boolean =
         config()?.getBoolean("aura_sync_paused") ?: false
+
+    fun killSwitchEnabled(): Boolean =
+        config()?.getBoolean("kill_switch_enabled") ?: false
+
+    fun minSupportedVersionCode(): Long =
+        config()?.getLong("min_supported_version_code") ?: 0L
 }

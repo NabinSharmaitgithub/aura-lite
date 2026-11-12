@@ -18,12 +18,14 @@ object AuraNotifications {
     const val CHANNEL_MCP = "aura_mcp"
     const val CHANNEL_APPROVAL = "aura_approval"
     const val CHANNEL_FCM = "aura_fcm"
+    const val CHANNEL_AGENT = "aura_agent"
 
     const val ID_RUN = 1001
     const val ID_WAKE = 1002
     const val ID_MCP = 1003
     const val ID_APPROVAL = 2001
     const val ID_FCM = 2002
+    const val ID_INTERRUPTED = 3001
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -42,6 +44,9 @@ object AuraNotifications {
             )
             manager.createNotificationChannel(
                 NotificationChannel(CHANNEL_FCM, context.getString(R.string.fcm_channel_name), NotificationManager.IMPORTANCE_DEFAULT),
+            )
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_AGENT, context.getString(R.string.agent_channel_name), NotificationManager.IMPORTANCE_HIGH),
             )
         }
     }
@@ -64,6 +69,15 @@ object AuraNotifications {
             .setSmallIcon(R.drawable.ic_aura_mark)
             .setContentTitle(title)
             .setContentText(body.take(160))
+            .setAutoCancel(true)
+            .setContentIntent(openApp(context))
+            .build()
+
+    fun interruptedNotification(context: Context, goal: String): Notification =
+        NotificationCompat.Builder(context, CHANNEL_AGENT)
+            .setSmallIcon(R.drawable.ic_aura_mark)
+            .setContentTitle("A run was interrupted")
+            .setContentText(goal.take(120))
             .setAutoCancel(true)
             .setContentIntent(openApp(context))
             .build()

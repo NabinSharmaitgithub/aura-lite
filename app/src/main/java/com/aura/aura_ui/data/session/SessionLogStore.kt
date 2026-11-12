@@ -180,6 +180,36 @@ class SessionWriter internal constructor(
 class SessionLogStore @Inject constructor(@ApplicationContext context: Context) {
 
     private val root = File(context.filesDir, "sessions").also { it.mkdirs() }
+    private val interruption = File(root.parentFile, "session_interruption.json")
+
+    /** Marks that a run began so we can tell the user if the process died mid-task. */
+    fun writeInterruption(sessionId: String, goal: String) {
+        runCatching {
+            interruption.writeText(
+                buildJsonObject {
+                    put("sessionId", sessionId)
+                    put("goal", goal)
+                    put("t", System.currentTimeMillis())
+                }.toString(),
+            )
+        }
+    }
+
+    /** Returns the interrupted (sessionId, goal) pair if any, or null when there's nothing to report. */
+    fun readInterruption(): Pair<String, String>? {
+        if (!interruption.exists()) return null
+        return runCatching {
+            val obj = Json.parseToJsonElement(interruption.readText()).jsonObject
+            val id = obj["sessionId"]?.jsonPrimitive?.content ?: return null
+            val goal = obj["goal"]?.jsonPrimitive?.content ?: ""
+            id to goal
+        }.getOrNull()
+    }
+
+    /** Called on every clean end path; clearing means no spurious "interrupted" banner. */
+    fun clearInterruption() {
+        runCatching { interruption.delete() }
+    }
 
     fun newSession(goal: String, provider: String, model: String): SessionWriter {
         val id = "s_" + UUID.randomUUID().toString().take(8)

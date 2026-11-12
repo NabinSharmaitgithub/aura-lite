@@ -52,6 +52,7 @@ import com.aura.aura_ui.presentation.screens.HooksScreen
 import com.aura.aura_ui.presentation.screens.LicensesScreen
 import com.aura.aura_ui.presentation.screens.MemoryScreen
 import com.aura.aura_ui.presentation.screens.MonoSettingsScreen
+import com.aura.aura_ui.presentation.screens.ReportScreen
 import com.aura.aura_ui.presentation.screens.PermissionsHealthScreen
 import com.aura.aura_ui.presentation.screens.B2Screen
 import com.aura.aura_ui.presentation.screens.FirebaseScreen
@@ -209,6 +210,9 @@ fun AuraAppShell(
 
             composable(Routes.EVAL_SUITE) {
                 EvalSuiteScreen(vm)
+            }
+            composable(Routes.ACTIVITY_REPORT) {
+                ReportScreen(vm)
             }
             composable(Routes.ACTIVITY_RETENTION) {
                 RetentionScreen(vm)

@@ -37,6 +37,7 @@ import com.aura.aura_ui.data.prefs.RestrictedAppsRepository
 import com.aura.aura_ui.data.prefs.SecureKeyStore
 import com.aura.aura_ui.data.prefs.SettingsSnapshot
 import com.aura.aura_ui.data.session.SessionLogStore
+import com.aura.aura_ui.data.session.SessionOutcome
 import com.aura.aura_ui.data.session.SessionSummary
 import com.aura.aura_ui.data.session.TraceEvent
 import com.aura.aura_ui.data.skills.Skill
@@ -86,6 +87,14 @@ data class KeyVerification(
     val modelCount: Int = 0,
 )
 
+data class ReportStats(
+    val runs: Int,
+    val successRate: Float,
+    val avgSteps: Float,
+    val avgDurationMs: Long,
+    val topProvider: String,
+)
+
 /**
  * One shared view model for the whole shell. Screens read the same settings revision, agent
  * state and session list so a run started on Home keeps updating while the user is in Settings.
@@ -126,6 +135,18 @@ class AuraViewModel @Inject constructor(
 
     private val _sessions = MutableStateFlow<List<SessionSummary>>(emptyList())
     val recentSessions: StateFlow<List<SessionSummary>> = _sessions.asStateFlow()
+
+    val reportStats: StateFlow<ReportStats> = _sessions.map { list ->
+        val finished = list.filter { it.endedAt != null }
+        val success = finished.count { it.outcome == SessionOutcome.SUCCESS }
+        ReportStats(
+            runs = list.size,
+            successRate = if (finished.isEmpty()) 0f else success.toFloat() / finished.size,
+            avgSteps = if (finished.isEmpty()) 0f else finished.map { it.steps }.average().toFloat(),
+            avgDurationMs = if (finished.isEmpty()) 0L else finished.map { it.durationMs }.average().toLong(),
+            topProvider = finished.groupingBy { it.provider.ifBlank { "—" } }.maxByOrNull { it.value.size }?.key ?: "—",
+        )
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, ReportStats(0, 0f, 0f, 0L, "—"))
 
     val skillList: StateFlow<List<Skill>> = skillsRepository.observe()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())

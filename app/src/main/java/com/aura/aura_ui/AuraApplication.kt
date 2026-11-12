@@ -29,6 +29,8 @@ class AuraApplication : Application() {
 
     @Inject lateinit var remoteConfig: FirebaseRemoteConfigManager
 
+    @Inject lateinit var sessions: com.aura.aura_ui.data.session.SessionLogStore
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
@@ -39,6 +41,12 @@ class AuraApplication : Application() {
             runCatching { diagnostics.applyCrashToggle() }
             runCatching { remoteConfig.fetchAndActivate() }
             runCatching { skills.ensureSeeded() }
+            runCatching {
+                val interrupted = sessions.readInterruption() ?: return@runCatching
+                androidx.core.app.NotificationManagerCompat.from(this@AuraApplication)
+                    .notify(AuraNotifications.ID_INTERRUPTED, AuraNotifications.interruptedNotification(this@AuraApplication, interrupted.second))
+                sessions.clearInterruption()
+            }
         }
     }
 }

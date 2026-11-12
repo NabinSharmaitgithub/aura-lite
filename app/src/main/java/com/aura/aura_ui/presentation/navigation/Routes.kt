@@ -27,6 +27,7 @@ object Routes {
     const val EVAL_SUITE = "eval"
     const val ACTIVITY_SESSION = "activity/session/{sessionId}"
     const val ACTIVITY_RETENTION = "activity/retention"
+    const val ACTIVITY_REPORT = "activity/report"
 
     fun session(sessionId: String) = "activity/session/$sessionId"
 
@@ -55,6 +56,7 @@ object Routes {
         SETTINGS_LICENSES to "Licences",
         EVAL_SUITE to "Eval suite",
         ACTIVITY_RETENTION to "Log retention",
+        ACTIVITY_REPORT to "On-device report",
     )
 
     fun titleFor(route: String?): String {
