@@ -150,6 +150,7 @@ class UiTreeExtractor(
         // compact list alias for consumers expecting element arrays
         put("elements", nodesArray)
     }
+    }
 
     fun stableKey(snapshot: ScreenSnapshot): String =
         MessageDigest.getInstance("SHA-256")
