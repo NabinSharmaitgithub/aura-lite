@@ -90,7 +90,8 @@ android {
             versionNameSuffix = "-$shortSha"
             isMinifyEnabled = false
             ndk {
-                abiFilters += "x86_64"
+                // x86_64 for emulators, arm64-v8a so physical debug builds install and run.
+                abiFilters += listOf("x86_64", "arm64-v8a")
             }
         }
         release {
