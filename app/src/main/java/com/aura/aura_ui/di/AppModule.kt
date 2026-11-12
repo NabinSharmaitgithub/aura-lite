@@ -8,6 +8,7 @@ import com.aura.mcp.audit.McpAuditLogger
 import com.aura.mcp.bridge.ApprovalGate
 import com.aura.mcp.bridge.DeviceBridge
 import com.aura.mcp.bridge.RestrictedAppsStore
+import com.aura.mcp.cache.PerceptionCache
 import com.aura.mcp.server.InProcessMcpServer
 import com.aura.mcp.server.McpClient
 import com.aura.mcp.tools.McpToolRegistry
@@ -68,17 +69,23 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun perceptionCache(): PerceptionCache = PerceptionCache()
+
+    @Provides
+    @Singleton
     fun toolRegistry(
         bridge: DeviceBridge,
         restricted: RestrictedAppsStore,
         approval: ApprovalGate,
         audit: McpAuditLogger,
+        perceptionCache: PerceptionCache,
     ): McpToolRegistry = McpToolRegistry(
         bridge = bridge,
         restrictedApps = restricted,
         approvalGate = approval,
         audit = audit,
         clientId = "local",
+        perceptionCache = perceptionCache,
     )
 
     @Provides

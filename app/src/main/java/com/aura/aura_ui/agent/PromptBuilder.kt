@@ -23,6 +23,8 @@ class PromptBuilder(
         skills: List<Skill>,
         recentFailures: List<String>,
         screenshotCapable: Boolean,
+        ledgerBlock: String? = null,
+        budgetNote: String? = null,
     ): String {
         val override = settings.systemPromptOverride.trim()
         if (override.isNotEmpty()) {
@@ -78,6 +80,16 @@ class PromptBuilder(
             if (recentFailures.isNotEmpty()) {
                 appendLine("## Recent failures (do not repeat)")
                 recentFailures.take(4).forEach { appendLine("- $it") }
+                appendLine()
+            }
+            if (!ledgerBlock.isNullOrBlank()) {
+                appendLine("## Run ledger")
+                appendLine(ledgerBlock.trim())
+                appendLine()
+            }
+            if (!budgetNote.isNullOrBlank()) {
+                appendLine("## Budget")
+                appendLine(budgetNote.trim())
                 appendLine()
             }
             val hooks = settings.hookInstructions.trim()

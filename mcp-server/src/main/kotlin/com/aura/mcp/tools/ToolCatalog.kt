@@ -63,7 +63,8 @@ object ToolCatalog {
     }
 
     private val locator = mapOf(
-        "index" to int("Element index from read_screen. Preferred locator."),
+        "som_id" to int("Element som_id/index from read_screen or perceive_screen. Preferred locator."),
+        "index" to int("Element index from read_screen (alias for som_id)."),
         "bounds" to buildJsonObject {
             put("type", "array")
             put("description", "Four integers [left, top, right, bottom].")
