@@ -88,6 +88,17 @@ jobs:
           gradle-version: "8.11.1"
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
+      - name: Run unit tests
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build-report
+          gradle :app:testDebugUnitTest :mcp-server:test --stacktrace --no-daemon 2>&1 | tee build-report/gradle-tests.log
+          if grep -qE '^FAILED' build-report/gradle-tests.log; then
+            echo "::error::Unit tests failed"
+            exit 1
+          fi
+
       - name: Reject committed secrets
         shell: bash
         run: |

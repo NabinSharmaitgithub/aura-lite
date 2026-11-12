@@ -1,18 +1,59 @@
-# AURA for Android — source reconstruction
+# AURA Lite — an on-device Android agent
 
-A complete, source-only rebuild of **AURA**, the on-device Android agent described by the six
-specification documents in this repository root. The app reads and drives the phone through an
-Accessibility Service, plans and executes multi-step tasks with the user's own LLM provider, and
-exposes the same device tools to external MCP clients over a paired local channel.
+AURA Lite reads your Android screen through an Accessibility Service, plans multi-step tasks with
+your own LLM provider, executes them with a bounded step budget, and exposes the same device tools
+to external MCP clients over a paired local link — as one auditable tool contract with no network
+relay in between.
 
-No accounts. No cloud. No analytics, crash reporting, remote config, or device registry. Network
-traffic only ever goes to the provider the user configured, the optional Tavily search API, or a
-paired local MCP client.
+**No accounts. No cloud. No tracking.** AURA Lite is fully functional offline. Firebase sync,
+Backblaze B2 file storage, and Tavily web search are strictly opt-in. Your LLM key lives in
+EncryptedSharedPreferences on-device and never leaves except to the provider endpoint you chose.
 
-> **Build status:** the full source tree, resources, assets and CI are in place, but this
-> environment has no JDK, Android SDK, or Gradle installation, so it has not been compiled here.
-> `.github/workflows/android.yml` is the verification path: it assembles debug and release APKs on
-> every push and publishes them as artifacts.
+![Build](https://img.shields.io/github/actions/workflow/status/NabinSharmaitgithub/aura-lite/android.yml?branch=main&label=build)
+![Release](https://img.shields.io/github/v/release/NabinSharmaitgithub/aura-lite?label=releases&format=date)
+![License](https://img.shields.io/badge/license-AGPL--3.0-red)
+![minSdk](https://img.shields.io/badge/minSdk-26-blue)
+![Tools](https://img.shields.io/badge/MCP%20tools-50-blueviolet)
+
+## Quick start
+
+```sh
+git clone https://github.com/NabinSharmaitgithub/aura-lite.git
+cd aura-lite
+gradle :app:assembleDebug
+```
+
+Install `app/build/outputs/apk/debug/app-debug.apk`, or download the
+[latest signed release](https://github.com/NabinSharmaitgithub/aura-lite/releases/latest).
+First launch walks you through the required permissions (accessibility, microphone, notifications)
+and provider setup. Voice models (sherpa-onnx KWS, Moonshine STT, Silero VAD) are not bundled;
+see [Voice models](#voice-models) below. The wake word reports itself as unavailable until the
+model is present — the rest of the app works immediately.
+
+## Highlights
+
+| | |
+|---|---|
+| 👁️ **Sees the screen** | Accessibility tree with indexed elements + ML Kit OCR. The agent never guesses coordinates — it taps by index. |
+| ✅ **Acts, then verifies** | Plan → act → verify loop with a bounded step budget and on-screen confirmation for destructive actions. |
+| 🤖 **50 device tools** | One catalog (`ToolCatalog.kt`) backs both the in-app agent and local MCP clients: launch apps, tap, type, fill forms, drive the in-app browser, manage notifications, reminders, contacts and files. |
+| 🎙️ **Voice** | Offline wake word engine (sherpa-onnx), push-to-talk via assistant gesture or volume keys, transcription with bundled Moonshine when present, otherwise the system recognizer. |
+| 🧠 **Long-term memory** | Encrypted per-app learnings, user skills registry, and a 20-task eval suite that ships in the app. |
+| 🔐 **Private and offline-first** | Firebase is opt-in. The agent's only network traffic goes to your chosen LLM endpoint (and optionally Tavily) unless you turn sync on. |
+| 🔌 **MCP for everyone** | The same 50-tool surface is served over LAN HTTPS/JSON-RPC with PIN pairing and a bearer token; trusted-device revocation included. |
+| 📦 **Signed, reproducible releases** | CI signs every release, verifies with `apksigner`, publishes APK + certificate fingerprints + SHA-256 checksums. |
+
+## Why not cloud-first
+
+Cloud agents need your screen, your key, and constant connectivity. AURA Lite keeps all three on
+the device by default. Cloud sync (facts, reminders, skills) ships but is off until you link a
+Firebase account in `Settings → Firebase`. Backblaze B2 backup is likewise opt-in and stores under
+`users/` with a scoped application key.
+
+> **Build status:** CI passes on every push. Tagged releases (or a manual GA run with
+> `workflow_dispatch input release=true`) publish a production-signed APK plus certificate
+> fingerprints and checksums. No local toolchain is required to verify the build — the workflow
+> is the gate.
 
 ---
 
@@ -40,8 +81,8 @@ The README is the map of the implementation; those six files remain the authorit
 | Modules | `:app` (Android application), `:mcp-server` (Android library) |
 | SDKs | minSdk 26, compileSdk 36, targetSdk 36, JDK 17 |
 | Build | AGP 8.10.1, Gradle 8.11.1, KSP, Hilt 2.56.1 |
-| Source size | 78 Kotlin files, ~14,500 lines |
-| Device tools | 49 tool definitions in one catalog (spec text says 45; the catalog covers every name listed there plus `run_steps`, browser helpers and the Backblaze B2 tools) |
+| Source size | 81 Kotlin files, ~15,000 lines |
+| Device tools | 50 tool definitions in one catalog (spec text says 45; the catalog covers every name listed there plus `run_steps`, browser helpers and the Backblaze B2 tools) |
 | LLM providers | 14 built-in endpoints + custom OpenAI-compatible endpoint |
 | Design | MONO: white canvas, black ink, blood-red semantics, floating capsule navigation |
 | Storage | Room v1, DataStore preferences, EncryptedSharedPreferences, JSONL sessions, JSON learnings (+ opt-in Backblaze B2 file storage, see `backblaze/README.md`) |
@@ -114,7 +155,7 @@ The README is the map of the implementation; those six files remain the authorit
 | Package | Responsibility |
 |---|---|
 | `bridge/` | `DeviceBridge`, `ToolResult`, `ToolDefinition`, `ToolDomain` — the only Android dependency boundary |
-| `tools/` | `ToolCatalog` (49 schemas) and `McpToolRegistry` (validation, dispatch, `tools/list`, `tools/call`) |
+| `tools/` | `ToolCatalog` (50 schemas) and `McpToolRegistry` (validation, dispatch, `tools/list`, `tools/call`) |
 | `server/` | JSON-RPC handling, `InProcessMcpServer` / `McpClient` (agent path), Ktor HTTPS `HttpMcpServer` (LAN path) |
 | `lan/` | TLS identity, QR pairing + token crypto, mDNS advertisement |
 | `audit/` | Append-only MCP audit log |
@@ -234,7 +275,7 @@ same trace the agent produced.
 
 ### Tool surface and transports
 
-- One 49-tool catalog covering screen reading, gestures, app launch, text entry, system settings,
+- One 50-tool catalog covering screen reading, gestures, app launch, text entry, system settings,
   media, notifications, contacts, calendar/alarms, files, browser, perception, memory, skills,
   reminders, search and the Backblaze B2 upload/download tools.
 - `InProcessMcpServer` + `McpClient` serve the agent without sockets.
@@ -288,7 +329,7 @@ bar.
 | Onboarding | 10 steps, persisted progress, permission steps poll live state and auto-advance |
 | Agent | Streaming loop, pause/resume/stop, trace, destructive confirmation, hooks, skills, loop detection, step budget |
 | Brain & models | 14 provider presets + custom, model catalog, key verification, per-provider keys |
-| Tools | 49-tool catalog, tool browser, JSON schema display, MCP audit, trusted devices, LAN server health, B2 upload/download tools |
+| Tools | 50-tool catalog, tool browser, JSON schema display, MCP audit, trusted devices, LAN server health, B2 upload/download tools |
 | Memory | Learned facts per scope, manual add/delete, voice corrections, clear actions |
 | Companion & voice | Wake word (optional), Silero VAD, STT/TTS (sherpa), overlay pill, visual feedback |
 | Perception | ML Kit OCR + optional ONNX icon detection, downscaled single-frame capture |
@@ -342,6 +383,22 @@ policy and privacy summary. File-backed storage (screenshots/session artifacts) 
 Backblaze B2 — see `backblaze/README.md`. Deploy by the user, never by the build.
 
 ---
+
+## Voice models
+
+AURA Lite ships the wake-word engine and STT/VAD code, but the model weights are not committed to
+the repository (licensing + size). On first run the voice screen reports them as missing; the rest
+of the app works normally. To enable voice:
+
+1. Download the sherpa-onnx KWS, Moonshine STT, Silero VAD and sherpa TTS models from the
+   [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) releases page.
+2. Unpack into `app/src/main/assets/kws/` (wake word), `app/src/main/assets/stt/` (Moonshine)
+   and `app/src/main/assets/vad/` (Silero), or point `local.properties` at a pre-populated
+   directory and run the `fetchSherpaModels` task.
+3. Rebuild. `AndroidManifest` includes `FOREGROUND_SERVICE_MICROPHONE` only with voice enabled,
+   so forks that do not want voice can strip `WakeWordListeningService` and be smaller still.
+
+Until then push-to-talk via the assistant gesture still works (on-device recognizer).
 
 ## Verification checklist
 

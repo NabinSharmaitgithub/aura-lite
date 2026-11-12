@@ -114,6 +114,7 @@ class AuraViewModel @Inject constructor(
     private val diagnostics: FirebaseDiagnostics,
     private val b2: com.aura.aura_ui.b2.B2Service,
     private val secureKeys: SecureKeyStore,
+    private val askUsers: com.aura.aura_ui.agent.AskUserBroker,
 ) : ViewModel() {
 
     val settings: StateFlow<SettingsSnapshot> = prefs.revision
@@ -245,6 +246,13 @@ class AuraViewModel @Inject constructor(
             onFailure = { error -> _b2Message.value = "Export failed: " + (error.message ?: "unknown") },
         )
     }
+
+
+    val askPending: StateFlow<com.aura.aura_ui.agent.AskUserBroker.Pending?> = askUsers.pending
+
+    fun answerAsk(answer: String) = askUsers.answer(answer)
+
+    fun dismissAsk() = askUsers.dismiss()
 
     fun setFirebaseToggle(kind: String, enabled: Boolean) {
         prefs.apply {

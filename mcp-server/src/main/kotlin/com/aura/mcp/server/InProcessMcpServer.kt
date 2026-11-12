@@ -4,7 +4,9 @@ import com.aura.mcp.bridge.ToolResult
 import com.aura.mcp.tools.McpToolRegistry
 import com.aura.mcp.tools.ToolCatalog
 import com.aura.mcp.bridge.ToolDefinition
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
@@ -15,6 +17,10 @@ interface McpClient {
     suspend fun initialize(): JsonObject
     fun listTools(): List<ToolDefinition>
     suspend fun callTool(name: String, args: JsonObject): ToolResult
+    fun listResources(): JsonArray
+    fun readResource(uri: String): JsonObject?
+    fun listPrompts(): JsonArray
+    fun getPrompt(name: String, arguments: JsonObject): JsonObject?
 }
 
 class InProcessMcpServer(private val registry: McpToolRegistry) {
@@ -23,21 +29,25 @@ class InProcessMcpServer(private val registry: McpToolRegistry) {
 
     suspend fun call(name: String, args: JsonObject): ToolResult = registry.execute(name, args)
 
-    fun initialize(): JsonObject = kotlinx.serialization.json.buildJsonObject {
-        put("protocolVersion", "2025-03-26")
-        put("serverInfo", kotlinx.serialization.json.buildJsonObject {
-            put("name", "aura")
-            put("version", com.aura.mcp.BuildConfig.VERSION_NAME)
-        })
-        put("capabilities", kotlinx.serialization.json.buildJsonObject {
-            put("tools", kotlinx.serialization.json.buildJsonObject {})
-        })
-    }
+    fun initialize(): JsonObject = McpRpc.initializeResult()
+
+    fun listResources(): JsonArray = McpRpc.resourcesList()
+
+    fun readResource(uri: String): JsonObject? = McpRpc.readResource(uri)
+
+    fun listPrompts(): JsonArray = McpRpc.promptsList()
+
+    fun getPrompt(name: String, arguments: JsonObject): JsonObject? = McpRpc.getPrompt(name, arguments)
 
     fun asClient(): McpClient = object : McpClient {
         override suspend fun initialize(): JsonObject = this@InProcessMcpServer.initialize()
         override fun listTools(): List<ToolDefinition> = this@InProcessMcpServer.listTools()
         override suspend fun callTool(name: String, args: JsonObject): ToolResult =
             this@InProcessMcpServer.call(name, args)
+        override fun listResources(): JsonArray = this@InProcessMcpServer.listResources()
+        override fun readResource(uri: String): JsonObject? = this@InProcessMcpServer.readResource(uri)
+        override fun listPrompts(): JsonArray = this@InProcessMcpServer.listPrompts()
+        override fun getPrompt(name: String, arguments: JsonObject): JsonObject? =
+            this@InProcessMcpServer.getPrompt(name, arguments)
     }
 }

@@ -52,6 +52,7 @@ import com.aura.aura_ui.ui.components.StatusChip
 import com.aura.aura_ui.ui.components.SurfaceCard
 import com.aura.aura_ui.ui.theme.LocalMonoScheme
 import com.aura.aura_ui.ui.theme.MonoStyle
+import com.aura.aura_ui.ui.theme.MonoStyleSmall
 import com.aura.aura_ui.presentation.navigation.Routes
 import com.aura.aura_ui.presentation.rememberPermissions
 
@@ -80,6 +81,7 @@ fun AuraHomeScreen(
     val health by vm.mcpHealth.collectAsStateWithLifecycle()
     val listening by vm.voiceListening.collectAsStateWithLifecycle()
     val permissions = rememberPermissions(vm)
+    val askPending by vm.askPending.collectAsStateWithLifecycle()
 
     var goal by remember { mutableStateOf("") }
     val endpoint = vm.currentEndpoint()
@@ -99,6 +101,17 @@ fun AuraHomeScreen(
         contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
+        if (askPending != null) {
+            item {
+                PendingQuestionCard(
+                    question = askPending!!.question,
+                    options = askPending!!.options,
+                    onAnswer = { vm.answerAsk(it) },
+                    onDismiss = { vm.dismissAsk() },
+                )
+                Spacer(Modifier.height(18.dp))
+            }
+        }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -322,6 +335,56 @@ fun AuraHomeScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+
+@Composable
+private fun PendingQuestionCard(
+    question: String,
+    options: List<String>,
+    onAnswer: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val mono = LocalMonoScheme.current
+    var freeText by remember { mutableStateOf("") }
+    SurfaceCard(contentPadding = PaddingValues(18.dp)) {
+        Text(
+            "AURA ASKS",
+            style = MonoStyleSmall,
+            color = mono.textSecondary,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            question,
+            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+            color = mono.textPrimary,
+        )
+        if (options.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                options.forEach { option ->
+                    InkButton(option, { onAnswer(option) }, modifier = Modifier.fillMaxWidth(), fillWidth = true)
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        AuraTextField(
+            value = freeText,
+            onValueChange = { freeText = it },
+            placeholder = "Or type an answer…",
+            textStyle = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GhostButton("Skip", onDismiss, color = mono.blood)
+            InkButton(
+                "Send",
+                { if (freeText.isNotBlank()) onAnswer(freeText.trim()) },
+                modifier = Modifier.weight(1f),
+                enabled = freeText.isNotBlank(),
+            )
         }
     }
 }

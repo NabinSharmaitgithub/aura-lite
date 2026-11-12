@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AURA Lite — an on-device Android agent</title>
+  <meta name="description" content="AURA Lite is an open-source, offline-first Android agent. It reads your screen through an Accessibility Service, drives your apps with your own LLM key, and exposes the same device tools to trusted local apps over MCP — no cloud, no accounts, no tracking." />
+  <link rel="icon" href="https://img.logo.dev/lo_KtlXNyqj5XXzvL2vVsQ4Q?token=YOUR_LOGO_DEV_TOKEN" />
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #ffffff; color: #111111;
+    }
+    @media (prefers-color-scheme: dark) { body { background:#0b0b0d; color:#ededed; } }
+    header.hero { padding: 4rem 1.5rem 3rem; }
+    .wrap { max-width: 1080px; margin: 0 auto; }
+    .kicker { text-transform: uppercase; letter-spacing: .12em; font-weight: 800; font-size: .75rem; color: #d20f2c; }
+    h1 { font-size: clamp(2rem, 5vw, 3.4rem); line-height: 1.02; margin: .6rem 0 1.2rem; letter-spacing: -0.02em; }
+    h1 .accent { color: #d20f2c; }
+    h2 { font-size: clamp(1.5rem, 3vw, 2.1rem); letter-spacing: -0.02em; margin: 0 0 .8rem; }
+    p.lede { font-size: 1.1rem; max-width: 46rem; color: #444; }
+    @media (prefers-color-scheme: dark) { p.lede { color:#c5c5c7; } }
+    .cta { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1.5rem 0 0; }
+    .btn { display:inline-block; padding: .85rem 1.35rem; border-radius: 999px; font-weight: 700; text-decoration: none; font-size: .95rem; }
+    .btn-primary { background: #d20f2c; color: #fff; }
+    .btn-ghost { border: 1.5px solid currentColor; color: inherit; }
+    .grid3 { display: grid; gap: 1rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    @media (max-width: 900px) { .grid3 { grid-template-columns: 1fr; } }
+    section { padding: 3rem 1.5rem; border-top: 1px solid #e5e5e5; }
+    @media (prefers-color-scheme: dark) { section { border-top-color:#2a2a2e; } }
+    .card { border: 1.5px solid #e5e5e5; border-radius: 14px; padding: 1.2rem 1.2rem; }
+    @media (prefers-color-scheme: dark) { .card { border-color:#2a2a2e; } }
+    ul.clean { list-style: none; padding: 0; }
+    ul.clean li { padding: .3rem 0; }
+    img.arch { width: 100%; border-radius: 12px; background:#fff; border:1.5px solid #e5e5e5; }
+    code { background: #f2f2f2; padding: .1rem .35rem; border-radius: 5px; }
+    @media (prefers-color-scheme: dark) { code { background:#2a2a2e; } }
+    .footer { padding: 2rem 1.5rem 3rem; color:#555; font-size:.85rem; }
+    .badge { display:inline-block; font-size:.7rem; border:1px solid currentColor; border-radius: 999px; padding: .1rem .6rem; margin-right: .35rem; }
+    a { color:#d20f2c; }
+    pre { background:#111; color:#f2f2f2; padding:1rem; border-radius:10px; overflow-x:auto; font-size:.82rem; }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker">Open source · On-device · Offline-first</div>
+    <h1>An AI agent that <span class="accent">lives in your phone</span> — and follows your rules.</h1>
+    <p class="lede">AURA Lite reads your screen, plans multi-step tasks, and drives apps through an Accessibility Service. Its 50 device tools are available to the on-device agent and to any MCP client you pair — same contract, same audit log, same safety gates. No AURA cloud. No required account. No telemetry by default.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/NabinSharmaitgithub/aura-lite/releases/latest">Download for Android</a>
+      <a class="btn btn-ghost" href="https://github.com/NabinSharmaitgithub/aura-lite">View on GitHub</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <div class="kicker">How it works</div>
+    <h2>Three steps, then the phone works for you.</h2>
+    <div class="grid3">
+      <div class="card"><h3>1. Grant what it needs</h3><p>Accessibility, microphone, notifications. Explicit, per-permission onboarding; revoke anything, anytime, with the big Pause pill or by switching the service off.</p></div>
+      <div class="card"><h3>2. Point AURA at your LLM</h3><p>14 built-in presets (OpenAI, Anthropic, Groq, Google, Ollama, and more) plus a custom OpenAI-compatible endpoint. Your key stays in EncryptedSharedPreferences on the device.</p></div>
+      <div class="card"><h3>3. Ask for something</h3><p>"Reply to my last WhatsApp message", "book the next train", "what do I have this week?" AURA perceives, acts, and re-reads the screen to verify — no blind typing.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="kicker">The tool surface</div>
+    <h2>50 tools, one contract.</h2>
+    <p>The same <code>ToolCatalog</code> backs the on-device agent and external MCP clients. You get full coverage of everyday tasks:</p>
+    <ul class="clean">
+      <li><span class="badge">Screen</span> read_screen · perceive_screen · get_screenshot · wait_for · verify_action</li>
+      <li><span class="badge">Touch</span> tap · swipe · scroll · type_text · set_value · press_enter · press_key</li>
+      <li><span class="badge">Apps</span> launch_app · lookup_app · open_deeplink · resolve_deeplink · list_app_deeplinks · system_intent</li>
+      <li><span class="badge">Files</span> find_files · open_file · upload_file · download_file · clipboard · resolve_contact</li>
+      <li><span class="badge">Browser</span> browser_open/read/find/act/extract/tabs/wait/screenshot/upload/handoff/close</li>
+      <li><span class="badge">Media</span> volume · media_control · get_media_sessions · read_notifications · notification_action · dismiss_notification</li>
+      <li><span class="badge">Safety</span> ask_user · run_steps (bounded batches) · end_session</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="kicker">Privacy</div>
+    <h2>Your phone is the server. We built it that way.</h2>
+    <ul class="clean">
+      <li><span class="badge">Offline</span> The agent, gates, and memory run entirely on-device. Web search (<code>web_search</code>) is the only outbound call, and only with your Tavily key.</li>
+      <li><span class="badge">Opt-in cloud</span> Firebase sync and Backblaze B2 file backup exist, sit behind explicit Settings toggles, and default to off.</li>
+      <li><span class="badge">No tracker</span> No analytics SDKs, no crash reporting unless you turn it on, no remote kill-switch unless you turn it on.</li>
+      <li><span class="badge">Hard blocks</span> Banking, payment, wallets and authenticators are always closed to the agent — regardless of instructions.</li>
+      <li><span class="badge">Audit</span> Every step is logged in an on-device trace you can read, export, or delete.</li>
+    </ul>
+    <p><a href="https://github.com/NabinSharmaitgithub/aura-lite/blob/main/SECURITY.md">Security policy &amp; reporting →</a></p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="kicker">For builders</div>
+    <h2>Speak MCP to a real phone.</h2>
+    <p>Pair from any MCP client on the same network — Claude Code, Cursor, VS Code — and AURA Lite's 50 tools are available over LAN HTTPS/JSON-RPC with PIN pairing and per-device revocation.</p>
+    <pre>claude mcp add aura -- aura-mcp</pre>
+    <p>Same contract, same safety gates, same audit log — whether the action comes from the phone's agent or a paired desktop client.</p>
+    <p style="opacity:.75"><em>The desktop bridge (<code>aura-mcp-connect</code>) is in active development; the LAN HTTPS transport works today.</em></p>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="wrap">
+    <p>AURA Lite is free software under <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0</a> with a linking exception for Google Play services, Firebase and ML Kit. Commercial licences are available — see <a href="https://github.com/NabinSharmaitgithub/aura-lite/blob/main/COMMERCIAL-LICENSE.md">COMMERCIAL-LICENSE.md</a>. Not affiliated with or endorsed by any LLM provider or automation vendor.</p>
+  </div>
+</footer>
+
+</body>
+</html>

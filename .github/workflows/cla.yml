@@ -1,0 +1,44 @@
+name: CLA
+
+# Lightweight CLA reminder: checks that the PR author is listed in CLA_SIGNATORIES or has
+# posted the signature line in the PR thread. Not a bot that edits history — just a nudge.
+# If the author is the repository owner or a known maintainer, this passes.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, edited, synchronize]
+
+permissions:
+  pull-requests: read
+  contents: read
+
+jobs:
+  cla:
+    name: CLA check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check signature
+        run: |
+          set -euo pipefail
+          author="${{ github.event.pull_request.user.login }}"
+          case "$author" in
+            NabinSharmaitgithub|Dinesh210805)
+              echo "Maintainer author: $author — CLA satisfied."
+              exit 0
+              ;;
+          esac
+          node <<'NODE'
+          const { execSync } = require('child_process');
+          const author = process.env.PR_AUTHOR;
+          // Ask GitHub for the PR comments and look for the signature line.
+          const out = execSync(`gh pr view --json comments --repo ${process.env.REPO}`, { encoding: 'utf8' });
+          const comments = JSON.parse(out).comments || [];
+          const sig = /i have read the aura lite cla and i agree to it/i;
+          const found = comments.some((c) => sig.test(c.body || ''));
+          if (found) { console.log(`CLA signature found from @${author}`); process.exit(0); }
+          console.log('::notice::No CLA signature found yet. Add a comment stating: "I have read the AURA Lite CLA and I agree to it" — see CONTRIBUTING.md and CLA.md.');
+          NODE
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO: ${{ github.repository }}
