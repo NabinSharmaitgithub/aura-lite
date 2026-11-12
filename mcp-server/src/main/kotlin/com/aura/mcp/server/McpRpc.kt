@@ -1,7 +1,7 @@
 package com.aura.mcp.server
 
+import com.aura.mcp.bridge.ToolDefinition
 import com.aura.mcp.tools.ToolCatalog
-import com.aura.mcp.tools.ToolDefinition
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -136,10 +136,10 @@ object McpRpc {
     private val DEVICE_RELEASE: String? = runCatching { android.os.Build.VERSION.RELEASE }.getOrNull()
 
     fun deviceStatusJson(): JsonObject = buildJsonObject {
-        put("model", DEVICE_MODEL)
-        put("manufacturer", DEVICE_MANUFACTURER)
+        put("model", DEVICE_MODEL ?: "unknown")
+        put("manufacturer", DEVICE_MANUFACTURER ?: "unknown")
         put("sdk_int", DEVICE_SDK)
-        put("android_release", DEVICE_RELEASE)
+        put("android_release", DEVICE_RELEASE ?: "unknown")
         put("server_version", SERVER_VERSION)
         put("tool_count", ToolCatalog.all.size)
         put("mcp_transport", "local-network only; no remote relay")
