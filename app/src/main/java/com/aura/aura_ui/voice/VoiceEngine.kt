@@ -24,8 +24,9 @@ import kotlin.coroutines.resume
 /**
  * Single-owner voice pipeline: one recorder, one recognizer, one speaker.
  *
- * STT uses the platform recognizer (on-device where the OEM provides it). TTS is the platform
- * engine. Wake-word and VAD live in their own engines.
+ * STT uses the platform recognizer (on-device where the OEM provides it). TTS uses the platform
+ * engine and can target a specific engine package/voice (e.g. Google TTS) when configured.
+ * Wake-word and VAD live in their own engines.
  */
 @Singleton
 class VoiceEngine @Inject constructor(@ApplicationContext private val context: Context) {
@@ -34,6 +35,7 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+    private var ttsEnginePackage: String? = null
 
     private val _transcript = MutableStateFlow("")
     val transcript: StateFlow<String> = _transcript.asStateFlow()
@@ -127,6 +129,8 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
     fun speak(text: String, flush: Boolean = true) {
         val engine = ensureTts() ?: return
         if (!ttsReady) return
+        // Apply preferred voice from settings each time (lightweight) in case user changed it.
+        applyPreferredVoice(engine)
         _speaking.value = true
         engine.speak(text, if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "aura-${System.nanoTime()}")
     }
@@ -136,27 +140,92 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
         _speaking.value = false
     }
 
-    fun voices(): List<String> = runCatching { tts?.voices?.map { it.name }.orEmpty() }.getOrDefault(emptyList())
+    fun voices(): List<String> = runCatching { ensureTts(); tts?.voices?.map { it.name }.orEmpty() }.getOrDefault(emptyList())
+
+    fun availableEngines(): List<String> = runCatching {
+        ensureTts()
+        tts?.engines?.map { it.name }.orEmpty()
+    }.getOrDefault(emptyList())
 
     fun shutdown() {
         cancelListening()
         runCatching { tts?.shutdown() }
         tts = null
         ttsReady = false
+        ttsEnginePackage = null
+    }
+
+    private fun preferredTtsSetting(): String =
+        context.getSharedPreferences("aura_settings", Context.MODE_PRIVATE)
+            .getString("tts_voice", "").orEmpty().trim()
+
+    private fun resolvePreferredEnginePackage(setting: String): String? {
+        if (setting.isBlank()) return null
+        // Accept explicit engine package or common aliases
+        val lower = setting.lowercase()
+        return when {
+            lower == "google" || lower == "google_tts" || lower == "com.google.android.tts" -> "com.google.android.tts"
+            setting.contains('.') -> setting.substringBefore('|').substringBefore('#')
+            else -> null
+        }
+    }
+
+    private fun applyPreferredVoice(engine: TextToSpeech) {
+        val pref = preferredTtsSetting()
+        if (pref.isBlank()) {
+            runCatching { engine.language = Locale.getDefault() }
+            return
+        }
+        val voiceName = pref.substringAfter('|', "").substringAfter('#', "").ifBlank { null }
+        if (voiceName != null) {
+            runCatching {
+                val voice = engine.voices?.firstOrNull { it.name == voiceName || it.name.equals(voiceName, true) }
+                if (voice != null) engine.voice = voice
+            }
+        } else {
+            runCatching { engine.language = Locale.getDefault() }
+        }
     }
 
     private fun ensureTts(): TextToSpeech? {
-        if (tts != null) return tts
-        tts = TextToSpeech(context) { status ->
-            ttsReady = status == TextToSpeech.SUCCESS
-            if (ttsReady) {
-                tts?.language = Locale.getDefault()
-                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) { _speaking.value = true }
-                    override fun onDone(utteranceId: String?) { _speaking.value = false }
-                    @Deprecated("Deprecated in Java")
-                    override fun onError(utteranceId: String?) { _speaking.value = false }
-                })
+        val pref = preferredTtsSetting()
+        val desiredEngine = resolvePreferredEnginePackage(pref)
+        if (tts != null && desiredEngine == ttsEnginePackage) return tts
+        if (tts != null && desiredEngine != ttsEnginePackage) {
+            runCatching { tts?.shutdown() }
+            tts = null
+            ttsReady = false
+        }
+        ttsEnginePackage = desiredEngine
+        tts = if (desiredEngine != null) {
+            TextToSpeech(context, { status ->
+                ttsReady = status == TextToSpeech.SUCCESS
+                if (ttsReady) {
+                    tts?.let { engine ->
+                        applyPreferredVoice(engine)
+                        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                            override fun onStart(utteranceId: String?) { _speaking.value = true }
+                            override fun onDone(utteranceId: String?) { _speaking.value = false }
+                            @Deprecated("Deprecated in Java")
+                            override fun onError(utteranceId: String?) { _speaking.value = false }
+                        })
+                    }
+                }
+            }, desiredEngine)
+        } else {
+            TextToSpeech(context) { status ->
+                ttsReady = status == TextToSpeech.SUCCESS
+                if (ttsReady) {
+                    tts?.let { engine ->
+                        applyPreferredVoice(engine)
+                        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                            override fun onStart(utteranceId: String?) { _speaking.value = true }
+                            override fun onDone(utteranceId: String?) { _speaking.value = false }
+                            @Deprecated("Deprecated in Java")
+                            override fun onError(utteranceId: String?) { _speaking.value = false }
+                        })
+                    }
+                }
             }
         }
         return tts

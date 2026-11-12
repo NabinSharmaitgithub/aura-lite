@@ -394,15 +394,16 @@ AURA Lite ships the wake-word engine and STT/VAD code, but the model weights are
 the repository (licensing + size). On first run the voice screen reports them as missing; the rest
 of the app works normally. To enable voice:
 
-1. Download the sherpa-onnx KWS, Moonshine STT, Silero VAD and sherpa TTS models from the
-   [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) releases page.
-2. Unpack into `app/src/main/assets/kws/` (wake word), `app/src/main/assets/stt/` (Moonshine)
-   and `app/src/main/assets/vad/` (Silero), or point `local.properties` at a pre-populated
-   directory and run the `fetchSherpaModels` task.
-3. Rebuild. `AndroidManifest` includes `FOREGROUND_SERVICE_MICROPHONE` only with voice enabled,
-   so forks that do not want voice can strip `WakeWordListeningService` and be smaller still.
-
-Until then push-to-talk via the assistant gesture still works (on-device recognizer).
+1. Pick a wake-word Zipformer model and STT model from the sherpa-onnx model index
+   https://k2-fsa.github.io/sherpa/onnx/kws/pretrained_models/index.html and the sherpa-onnx
+   "other models" collection at https://k2-fsa.github.io/sherpa/onnx/online-transducer/pretrained.html.
+   Low-cost choices: a ~3 MB English KWS model; Moonshine tiny for STT; Silero VAD for gating.
+2. List every asset you want in `app/src/main/assets/models.txt` (one `<target> <url>` per line)
+   — see the instructions in that file.
+3. Run `gradle :app:fetchSherpaModels` — files are then committed to `app/src/main/assets/` and
+   included in the APK. Models are gitignored; re-run the task on a fresh checkout.
+4. Rebuild. Without models, wake word and offline STT are disabled and the app uses the platform
+   speech recognizer (push-to-talk via the assistant gesture).
 
 ## Verification checklist
 

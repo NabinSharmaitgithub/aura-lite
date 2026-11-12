@@ -15,6 +15,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aura.aura_ui.presentation.AuraViewModel
 import com.aura.aura_ui.presentation.navigation.AuraRoot
 import com.aura.aura_ui.presentation.navigation.Routes
+import com.aura.aura_ui.services.AssistantForegroundService
 import com.aura.aura_ui.ui.theme.AuraTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -34,6 +35,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         pendingDeepLink = routeFor(intent)
+        handleAssistantIntent(intent)
 
         setContent {
             val settings by vm.settings.collectAsStateWithLifecycle()
@@ -59,6 +61,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingDeepLink = routeFor(intent)
+        handleAssistantIntent(intent)
     }
 
     private fun routeFor(intent: Intent?): String? {
@@ -67,6 +70,23 @@ class MainActivity : ComponentActivity() {
             data.scheme == "aura" && data.host == "mcp" && data.path.orEmpty().startsWith("/oauth") ->
                 Routes.SETTINGS_TRUSTED_DEVICES
             else -> null
+        }
+    }
+
+    private fun handleAssistantIntent(intent: Intent?) {
+        val action = intent?.action ?: return
+        val isAssist = action == Intent.ACTION_ASSIST ||
+            action == Intent.ACTION_VOICE_COMMAND ||
+            action == "android.intent.action.VOICE_ASSIST"
+        if (!isAssist) return
+        // Prefer an explicit text query if provided by the assistant gesture, otherwise start listening.
+        val query = intent.getStringExtra(Intent.EXTRA_ASSIST_INPUT_HINT_TEXT)
+            ?: intent.getStringExtra(Intent.EXTRA_TEXT)
+            ?: intent.getStringExtra("query")
+        if (!query.isNullOrBlank()) {
+            AssistantForegroundService.submit(this, query)
+        } else {
+            AssistantForegroundService.listen(this)
         }
     }
 }
