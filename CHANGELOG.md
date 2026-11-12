@@ -4,6 +4,13 @@ All notable changes to AURA Lite are documented here. Format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Fixed
+- Voice: mic permission is now checked before the foreground service launches; missing permission
+  or a speech-recognition failure now posts a high-priority "Voice capture failed" notification
+  with the reason instead of silently exiting. `AssistantForegroundService` also uses the
+  `microphone` foreground type, and the Home `AURA_LISTEN` entry gives the user feedback when
+  speech recognition is unavailable on the device.
+
 ### Added
 - `ask_user` tool: the agent can pause the run, ask the user a question in-app or via notification,
   and resume with the answer. Available to the in-app agent and MCP clients.

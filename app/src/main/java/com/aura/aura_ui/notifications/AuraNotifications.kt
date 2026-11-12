@@ -26,6 +26,8 @@ object AuraNotifications {
     const val ID_APPROVAL = 2001
     const val ID_FCM = 2002
     const val ID_INTERRUPTED = 3001
+    const val DPI_NO_MIC = 3004
+    const val DPI_FAILURE = 3005
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -70,6 +72,17 @@ object AuraNotifications {
             .setContentTitle(title)
             .setContentText(body.take(160))
             .setAutoCancel(true)
+            .setContentIntent(openApp(context))
+            .build()
+
+    fun agentFailureNotification(context: Context, title: String, body: String): Notification =
+        NotificationCompat.Builder(context, CHANNEL_AGENT)
+            .setSmallIcon(R.drawable.ic_aura_mark)
+            .setContentTitle(title)
+            .setContentText(body.take(160))
+            .setAutoCancel(true)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(openApp(context))
             .build()
 
