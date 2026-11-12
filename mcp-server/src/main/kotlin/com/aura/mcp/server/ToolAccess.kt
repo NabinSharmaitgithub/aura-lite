@@ -1,5 +1,6 @@
 package com.aura.mcp.server
 
+import com.aura.mcp.Toolset
 import com.aura.mcp.bridge.ToolDomain
 import com.aura.mcp.tools.ToolCatalog
 import com.aura.mcp.tools.ToolPrincipal
@@ -30,9 +31,10 @@ object ToolAccess {
                 else -> if (ToolCatalog.byName.containsKey(scope)) allowed += scope
             }
         }
+        val toolsetScopes = scopes.mapNotNull { Toolset.parse(it) }.map { it.name }.toSet()
         return ToolPrincipal(
             clientId = clientId,
-            allowedToolsets = scopes.toSet(),
+            allowedToolsets = toolsetScopes.ifEmpty { null },
             allowedTools = if (allowed.isEmpty()) null else allowed,
         )
     }

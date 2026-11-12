@@ -33,7 +33,9 @@ import com.aura.aura_ui.ui.components.ChipTone
 import com.aura.aura_ui.ui.components.Dot
 import com.aura.aura_ui.ui.components.GhostButton
 import com.aura.aura_ui.ui.components.InkCard
+import com.aura.aura_ui.ui.components.PausePill
 import com.aura.aura_ui.ui.components.SecondaryButton
+import com.aura.aura_ui.ui.components.StatusStrip
 import com.aura.aura_ui.ui.components.SurfaceCard
 import com.aura.aura_ui.ui.theme.LocalMonoScheme
 import com.aura.aura_ui.ui.theme.MonoStyle
@@ -125,6 +127,11 @@ fun LiveRunCard(
         else -> ChipTone.On
     }
     InkCard(modifier = modifier) {
+        StatusStrip(
+            status = state.displayStatus.uppercase(),
+            detail = state.trace.lastOrNull()?.title?.take(72),
+        )
+        Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(if (statusTone == ChipTone.Broken) mono.blood else mono.successDot))
             Spacer(Modifier.width(8.dp))
@@ -181,15 +188,16 @@ fun LiveRunCard(
             Text(state.error, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, color = mono.blood)
         }
         Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (state.running) {
-                SecondaryButton(
-                    label = if (state.paused) "Resume" else "Pause",
-                    onClick = { if (state.paused) onResume() else onPause() },
-                    modifier = Modifier.weight(1f),
-                    enabled = true,
+                PausePill(
+                    paused = state.paused,
+                    onTogglePause = { if (state.paused) onResume() else onPause() },
+                    onStop = onStop,
                 )
-                GhostButton("Stop", onStop, color = mono.blood)
             } else {
                 GhostButton("Dismiss", onDismiss, color = mono.textOnInkDim)
             }

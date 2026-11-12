@@ -1,0 +1,104 @@
+# feature need to be impliminted
+
+
+- Phone-local execution flow (end-to-end architecture)
+- Remote MCP flow (computer → phone)
+- `ask_aura` conversation handoff
+- Vision-aware tool loop
+- Screenshot re-injection
+- Stale perception eviction
+- Ledger re-injection
+- Defect repair / bounded defect nudges
+- Keep-awake during runs
+- Control-lock integration
+- Pause checkpoints
+- Run-end hooks
+- Status narration
+- Deferred tool loading
+- Hooks system integration
+- Run entry modes (fresh run, saved-settings run, resumed run)
+- Honest termination paths (success/partial/failure/cancelled/quota/budget/time)
+- Single composition root (`McpServerBuilder`)
+- MCP resources
+- MCP prompts
+- MCP instructions (`AuraInstructions` / `Doctrine`)
+- Skill prompts registration
+- Tool groups by `Toolset` (`CORE`, `ASSISTANT`, `BROWSER`)
+- Audit sink
+- Session sink
+- Tool-phase sink
+- Trail sink
+- Post-action observer sink
+- Learnings dispatch sink
+- `CvMemo` cache
+- `LastSeenScreen` cache
+- `InProcessMcpServer` internal principal injection
+- Standardized refusal/error envelopes (`policy_blocked`, `scope_denied`, `action_guard`)
+- `get_device_status` tool
+- `run_steps` tool (present but not registered by default)
+- Client-side `load_tools`
+- Client-side `ask_user`
+- Client-side ledger helper tools
+- Client-side memory helper tools
+- Client-side proof helper tools
+- Client-side skills helper tools
+- Client-side research helper tools
+- Perception tiering heuristics (`tree_only` vs `full`)
+- Forced perception escalation rules
+- Screen signatures/generation/activity tracking
+- Tap reaction observation and semantic fallback
+- Multi-stroke trace/draw gesture semantics
+- Keyboard suppression/restore (keyboard lease)
+- Control-lock/touch signals
+- HITL (`ask_user`) subsystem
+- Proof/completion subsystem
+- Completion evidence safeguards
+- Pre-task/on-demand research subsystem
+- Learned route hints (structure-focused, privacy-aware)
+- Resumable runs with preamble/re-verification
+- Incremental/debounced ledger persistence with critical flushes
+- Context compaction heuristics
+- `ActiveRunRegistry` (run steering/registry)
+- Status strip UI
+- Pause pill UI
+- Run report card (markdown-capable)
+- Centralized permission metadata registry
+- Structured status/report model decoupled from model text
+- LAN signaling HTTP endpoints (`/aura/info`, `/aura/connect`)
+- Desktop bridge daemon (`aura-mcp-connect`)
+- Desktop local daemon on `127.0.0.1:<port>/mcp`
+- Stdio shim proxy
+- Phone discovery via saved address
+- Phone discovery via mDNS
+- Phone discovery via subnet scan
+- SAS/verification code pairing
+- Reconnect challenge-response (HMAC)
+- Per-client MCP sessions/principals
+- Desktop trust material storage (`~/.aura/webrtc.json`)
+- Host-side `aura-adb` tool (developer opt-in)
+- Foreground-app protection (`ForegroundGuard`)
+- OTP sighting guard (`OtpSighting`)
+- Spoken-request screening hooks
+- Policy decision logging
+- Structured trace schemas
+- Chokepoint instrumentation (gate decision, settle/observe, completion correlation)
+- Separation of user-facing reports and forensic logs
+- Eval debug cockpit
+- Eval scripts/harness integration
+- Verdict taxonomy (`pass/fail/refused/invalid`)
+- Remote kill switch
+- Minimum version gating
+- Update prompts
+- Remote blocklist
+- Remote suspension
+- Cached/offline-safe remote gate enforcement
+- Debug agent spike broadcast receiver
+- Tool bench (`mcp-server` tests with mock phone and HTML report)
+- Control-lock diagnostics
+- UI stream/debug hooks
+- Implementation playbook (recommended implementation order)
+- Non-negotiable invariants
+- Porting strategy
+- Build/runtime requirements documentation
+- Feature-dependent permission matrix
+- Known constraints and risks documentation

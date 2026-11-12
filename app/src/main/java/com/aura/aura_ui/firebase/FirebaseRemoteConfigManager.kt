@@ -31,6 +31,8 @@ class FirebaseRemoteConfigManager @Inject constructor(
                         "aura_sync_paused" to false,
                         "kill_switch_enabled" to false,
                         "min_supported_version_code" to 0L,
+                        "remote_blocklisted" to false,
+                        "remote_suspended" to false,
                     ),
                 )
             }
@@ -51,4 +53,10 @@ class FirebaseRemoteConfigManager @Inject constructor(
 
     fun minSupportedVersionCode(): Long =
         config()?.getLong("min_supported_version_code") ?: 0L
+
+    fun blocklisted(): Boolean =
+        config()?.getBoolean("remote_blocklisted") ?: false
+
+    fun suspended(): Boolean =
+        config()?.getBoolean("remote_suspended") ?: false
 }

@@ -6,6 +6,7 @@ import com.aura.aura_ui.accessibility.ScreenCaptureManager
 import com.aura.aura_ui.accessibility.ScreenGeneration
 import com.aura.aura_ui.accessibility.ScreenState
 import com.aura.aura_ui.accessibility.SystemControlsHelper
+import com.aura.aura_ui.agent.AgentRuntime
 import com.aura.aura_ui.agent.research.WebSearchClient
 import com.aura.aura_ui.automation.AppResolver
 import com.aura.aura_ui.automation.DataTools
@@ -13,21 +14,27 @@ import com.aura.aura_ui.browser.BrowserController
 import com.aura.aura_ui.data.prefs.AuraSettings
 import com.aura.aura_ui.notifications.AuraNotificationListenerService
 import com.aura.aura_ui.perception.PerceptionEngine
+import com.aura.aura_ui.agent.strategy.PerceptionTiering
 import com.aura.mcp.bridge.DeviceBridge
 import com.aura.mcp.bridge.ToolError
 import com.aura.mcp.bridge.ToolResult
 import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.Context
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.floatOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
@@ -47,6 +54,7 @@ class AuraDeviceBridge @Inject constructor(
     private val search: WebSearchClient,
     private val b2: com.aura.aura_ui.b2.B2Service,
     private val askUsers: com.aura.aura_ui.agent.AskUserBroker,
+    private val agentRuntime: Provider<AgentRuntime>,
 ) : DeviceBridge {
 
     override suspend fun execute(tool: String, args: JsonObject): ToolResult {
@@ -72,6 +80,22 @@ class AuraDeviceBridge @Inject constructor(
                     ToolResult.fail(ToolError("invalid_args", "from_x, from_y, to_x and to_y are required"))
                 } else {
                     service.gestures.swipe(fx, fy, tx, ty, JsonArgs.long(args, "duration_ms", 300) ?: 300)
+                }
+            }
+            "draw" -> withService { service ->
+                val raw = args["strokes"] as? JsonArray
+                val strokes = raw?.mapNotNull { stroke ->
+                    (stroke as? JsonArray)?.mapNotNull { point ->
+                        val pair = point as? JsonArray
+                        val x = (pair?.getOrNull(0) as? JsonPrimitive)?.floatOrNull
+                        val y = (pair?.getOrNull(1) as? JsonPrimitive)?.floatOrNull
+                        if (x != null && y != null) x to y else null
+                    }?.takeIf { it.size >= 2 }
+                }.orEmpty()
+                if (strokes.isEmpty()) {
+                    ToolResult.fail(ToolError("invalid_args", "strokes must contain at least one stroke with 2+ [x,y] points"))
+                } else {
+                    service.gestures.draw(strokes)
                 }
             }
             "scroll" -> withService { service ->
@@ -311,6 +335,50 @@ class AuraDeviceBridge @Inject constructor(
                     put("awaited", true)
                 })
             }
+            "ask_aura" -> {
+                val goal = JsonArgs.str(args, "goal") ?: return ToolResult.fail(ToolError.notFound("goal is required"))
+                val voice = JsonArgs.bool(args, "voice")
+                val context = JsonArgs.str(args, "context")
+                val delegatedGoal = if (context.isNullOrBlank()) goal else "$goal\n\nContext: $context"
+                return runCatching {
+                    val runtime = agentRuntime.get()
+                    val wasRunning = runtime.isRunning
+                    if (wasRunning) {
+                        return@runCatching ToolResult.fail(
+                            ToolError("busy", "AURA is already running another task; wait for it to finish."),
+                        )
+                    }
+                    runtime.submit(delegatedGoal, voice)
+                    // Wait briefly for the run to start, then for completion (bounded).
+                    val startDeadline = System.currentTimeMillis() + 2_000
+                    while (!runtime.isRunning && System.currentTimeMillis() < startDeadline) {
+                        delay(50)
+                    }
+                    val endDeadline = System.currentTimeMillis() + 180_000
+                    while (runtime.isRunning && System.currentTimeMillis() < endDeadline) {
+                        delay(300)
+                    }
+                    val st = runtime.state.value
+                    val completed = !runtime.isRunning
+                    val ok = completed && (st.outcome == com.aura.aura_ui.data.session.SessionOutcome.SUCCESS || st.error == null)
+                    ToolResult(
+                        ok = ok || (completed && st.answer != null),
+                        changed = completed,
+                        observed = buildJsonObject {
+                            put("handoff", if (completed) "completed" else "timeout")
+                            put("goal", goal)
+                            put("running", runtime.isRunning)
+                            put("status", st.status)
+                            put("outcome", st.outcome ?: "")
+                            put("steps", st.stepCount)
+                            put("answer", (st.answer ?: st.error ?: "").take(4000))
+                        },
+                        error = if (completed && st.error != null) ToolError.internal(st.error) else null,
+                    )
+                }.getOrElse { e ->
+                    ToolResult.fail(ToolError.internal(e.message ?: "ask_aura handoff failed"))
+                }
+            }
             "end_session" -> ToolResult.ok(
                 observed = buildJsonObject {
                     put("outcome", JsonArgs.str(args, "outcome") ?: "success")
@@ -333,10 +401,31 @@ class AuraDeviceBridge @Inject constructor(
             changesOnly = JsonArgs.bool(args, "changes_only"),
             maxNodes = JsonArgs.int(args, "max_nodes"),
         )
-        return ToolResult.ok(
-            changed = snapshot.changed,
-            observed = service.extractor.toJson(snapshot, JsonArgs.bool(args, "include_bounds", true)),
+        val base = service.extractor.toJson(snapshot, JsonArgs.bool(args, "include_bounds", true))
+        val interactive = snapshot.nodes.count { it.clickable || it.editable || it.scrollable }
+        val labeled = snapshot.nodes.count { it.label.isNotBlank() }
+        val tierDecision = PerceptionTiering.decide(
+            PerceptionTiering.Signals(
+                interactiveNodes = interactive,
+                labeledNodes = labeled,
+                totalNodes = snapshot.nodes.size,
+                screenChanged = snapshot.changed,
+            ),
         )
+        val observed = buildJsonObject {
+            base.forEach { (k, v) -> put(k, v) }
+            put(
+                "perception_tiering",
+                buildJsonObject {
+                    put("tier", tierDecision.tier.name.lowercase())
+                    put("reason", tierDecision.reason)
+                    put("interactive_nodes", interactive)
+                    put("labeled_nodes", labeled)
+                    put("total_nodes", snapshot.nodes.size)
+                },
+            )
+        }
+        return ToolResult.ok(changed = snapshot.changed, observed = observed)
     }
 
     private suspend fun screenshot(args: JsonObject): ToolResult {
@@ -374,7 +463,17 @@ class AuraDeviceBridge @Inject constructor(
         val mode = JsonArgs.str(args, "mode") ?: "both"
         val result = runCatching { perception.perceive(file, mode) }
             .getOrElse { return ToolResult.fail(ToolError.internal(it.message ?: "Perception failed")) }
-        return ToolResult.ok(observed = result)
+        val observed = buildJsonObject {
+            result.forEach { (k, v) -> put(k, v) }
+            put(
+                "perception_tiering",
+                buildJsonObject {
+                    put("tier", "full")
+                    put("reason", "explicit visual/perception request")
+                },
+            )
+        }
+        return ToolResult.ok(observed = observed)
     }
 
     private fun requestCapture(): ToolResult {

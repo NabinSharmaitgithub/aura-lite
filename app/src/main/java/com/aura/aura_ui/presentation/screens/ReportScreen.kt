@@ -1,5 +1,6 @@
 package com.aura.aura_ui.presentation.screens
 
+import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,12 +16,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aura.aura_ui.presentation.AuraViewModel
 import com.aura.aura_ui.presentation.formatDuration
+import com.aura.aura_ui.presentation.permissions.PermissionRegistry
 import com.aura.aura_ui.ui.components.KeyValueRow
+import com.aura.aura_ui.ui.components.RunReportCard
 import com.aura.aura_ui.ui.components.SurfaceCard
 import com.aura.aura_ui.ui.theme.LocalMonoScheme
 import com.aura.aura_ui.ui.theme.MonoStyleSmall
@@ -89,6 +93,43 @@ fun ReportScreen(vm: AuraViewModel) {
                 Spacer(Modifier.height(8.dp))
                 KeyValueRow("Top provider", stats.topProvider)
             }
+        }
+
+        item {
+            RunReportCard(
+                title = "Outcome model",
+                markdown = """
+                    ## How runs end
+                    - success: the goal was completed and verified
+                    - partial: some steps completed, the rest need input
+                    - failure: the provider, policy, or a step failed
+                    - cancelled: you stopped or declined the run
+                    - budget/time: the step or time budget was exhausted
+
+                    ## Proof
+                    Destructive/high-stakes goals only report success when a mutating action succeeded and was observed.
+                """.trimIndent(),
+            )
+        }
+
+        item {
+            val context = LocalContext.current
+            val granted = { permission: String ->
+                if (permission == android.Manifest.permission.SYSTEM_ALERT_WINDOW) {
+                    android.provider.Settings.canDrawOverlays(context)
+                } else {
+                    ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+                }
+            }
+            val lines = PermissionRegistry.entries.joinToString("\n") { entry ->
+                val ok = granted(entry.permission)
+                val state = if (ok) "granted" else if (entry.optional) "optional/missing" else "missing"
+                "- ${entry.label}: $state — ${entry.purpose} (fix: ${entry.fixPath})"
+            }
+            RunReportCard(
+                title = "Permission matrix",
+                markdown = "## Feature permissions\n$lines",
+            )
         }
     }
 }

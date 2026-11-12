@@ -142,9 +142,15 @@ class AuraViewModel @Inject constructor(
 
     /** Resume the goal that was interrupted, clearing the marker. */
     fun resumeInterruptedRun() {
-        val goal = interruptedGoal.value ?: return
-        sessions.clearInterruption()
-        submit(goal)
+        val goal = interruptedGoal.value
+        if (goal != null) {
+            sessions.clearInterruption()
+            submit(goal)
+            return
+        }
+        // Fall back to an atomic run checkpoint (pause/failure/budget) when no legacy
+        // interruption marker exists.
+        runtime.resumeLatestCheckpoint()
     }
 
     /** Dismiss the interrupted-run banner. */

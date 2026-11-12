@@ -31,13 +31,13 @@ class InProcessMcpServer(private val registry: McpToolRegistry) {
 
     fun initialize(): JsonObject = McpRpc.initializeResult()
 
-    fun listResources(): JsonArray = McpRpc.resourcesList()
+    fun listResources(): JsonArray = McpResources.list()
 
-    fun readResource(uri: String): JsonObject? = McpRpc.readResource(uri)
+    fun readResource(uri: String): JsonObject? = McpResources.read(uri)
 
-    fun listPrompts(): JsonArray = McpRpc.promptsList()
+    fun listPrompts(): JsonArray = McpPrompts.list()
 
-    fun getPrompt(name: String, arguments: JsonObject): JsonObject? = McpRpc.getPrompt(name, arguments)
+    fun getPrompt(name: String, arguments: JsonObject): JsonObject? = McpPrompts.get(name, arguments)
 
     fun asClient(): McpClient = object : McpClient {
         override suspend fun initialize(): JsonObject = this@InProcessMcpServer.initialize()

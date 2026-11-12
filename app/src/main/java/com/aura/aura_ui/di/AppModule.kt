@@ -2,16 +2,23 @@ package com.aura.aura_ui.di
 
 import android.content.Context
 import com.aura.aura_ui.agent.NotificationApprovalGate
+import com.aura.aura_ui.agent.control.ControlLock
 import com.aura.aura_ui.bridge.AuraDeviceBridge
 import com.aura.aura_ui.data.prefs.RestrictedAppsRepository
 import com.aura.mcp.audit.McpAuditLogger
 import com.aura.mcp.bridge.ApprovalGate
 import com.aura.mcp.bridge.DeviceBridge
 import com.aura.mcp.bridge.RestrictedAppsStore
+import com.aura.mcp.cache.CvMemo
+import com.aura.mcp.cache.LastSeenScreen
 import com.aura.mcp.cache.PerceptionCache
 import com.aura.mcp.server.InProcessMcpServer
+import com.aura.mcp.server.McpCaches
 import com.aura.mcp.server.McpClient
+import com.aura.mcp.server.McpServerBuilder
+import com.aura.mcp.server.McpSinks
 import com.aura.mcp.tools.McpToolRegistry
+import com.aura.mcp.tools.ToolPipelineHooks
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -73,25 +80,56 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun toolRegistry(
-        bridge: DeviceBridge,
-        restricted: RestrictedAppsStore,
-        approval: ApprovalGate,
-        audit: McpAuditLogger,
-        perceptionCache: PerceptionCache,
-    ): McpToolRegistry = McpToolRegistry(
-        bridge = bridge,
-        restrictedApps = restricted,
-        approvalGate = approval,
-        audit = audit,
-        clientId = "local",
-        perceptionCache = perceptionCache,
+    fun mcpCaches(perceptionCache: PerceptionCache): McpCaches = McpCaches(
+        perception = perceptionCache,
+        cvMemo = CvMemo(),
+        lastSeen = LastSeenScreen(),
     )
 
     @Provides
     @Singleton
-    fun inProcessServer(registry: McpToolRegistry): InProcessMcpServer =
-        InProcessMcpServer(registry)
+    fun mcpBuiltServer(
+        bridge: DeviceBridge,
+        restricted: RestrictedAppsStore,
+        approval: ApprovalGate,
+        audit: McpAuditLogger,
+        caches: McpCaches,
+    ): McpServerBuilder.BuiltServer = McpServerBuilder(bridge)
+        .restrictedApps(restricted)
+        .approvalGate(approval)
+        .caches(caches)
+        .sinks(
+            McpSinks(
+                audit = audit,
+                postActionObserver = { tool, _, result ->
+                    if (!result.ok) return@McpSinks
+                    val observed = result.observed ?: return@McpSinks
+                    if (tool == "read_screen" || tool == "perceive_screen" || tool == "get_screenshot") {
+                        val generation = (observed["generation"] as? kotlinx.serialization.json.JsonPrimitive)
+                            ?.content?.toLongOrNull() ?: -1L
+                        val signature = (observed["hash"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                            ?: (observed["signature"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                        val pkg = (observed["package"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                            ?: (observed["packageName"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                        caches.lastSeen.update(generation, signature, pkg, observed)
+                        signature?.let { caches.cvMemo.put(it, observed) }
+                    }
+                },
+            ),
+        )
+        .hooks(object : ToolPipelineHooks {
+            override fun isPaused(): Boolean =
+                ControlLock.isUserPaused() || ControlLock.isUserHolding()
+        })
+        .build(clientId = "local")
+
+    @Provides
+    @Singleton
+    fun toolRegistry(built: McpServerBuilder.BuiltServer): McpToolRegistry = built.registry
+
+    @Provides
+    @Singleton
+    fun inProcessServer(built: McpServerBuilder.BuiltServer): InProcessMcpServer = built.inProcess
 
     @Provides
     @Singleton

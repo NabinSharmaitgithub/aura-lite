@@ -1,0 +1,19 @@
+{
+  "name": "aura-mcp-connect",
+  "version": "0.1.0",
+  "description": "Desktop bridge for AURA Lite: discovery, pairing, local MCP daemon and stdio shim",
+  "type": "module",
+  "bin": {
+    "aura-mcp-connect": "./src/cli.js",
+    "aura-mcp-stdio": "./src/stdio.js"
+  },
+  "scripts": {
+    "start": "node ./src/cli.js daemon",
+    "pair": "node ./src/cli.js pair",
+    "stdio": "node ./src/stdio.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {}
+}

@@ -40,11 +40,47 @@ class GestureInjector(
         val point = target
         val dispatched = dispatchTap(point.first, point.second, longPress)
         if (!dispatched) return ToolResult.fail(ToolError.internal("Gesture was cancelled"))
-        delay(if (longPress) 550 else 280)
+        settle(minDelayMs = if (longPress) 520 else 140)
         val after = currentSnapshot()
         return ToolResult.ok(
             changed = after.hash != before.hash,
             observed = observed(after, "Tapped ${indexText(index, point)}"),
+        )
+    }
+
+    /**
+     * Multi-stroke freehand drawing. Android limits a gesture to a small number of strokes;
+     * invalid strokes are skipped rather than failing the whole gesture.
+     */
+    suspend fun draw(strokes: List<List<Pair<Float, Float>>>): ToolResult {
+        val before = currentSnapshot()
+        val builder = GestureDescription.Builder()
+        var added = 0
+        strokes.take(10).forEach { points ->
+            if (points.size < 2) return@forEach
+            val path = Path().apply {
+                moveTo(points.first().first, points.first().second)
+                points.drop(1).take(199).forEach { (x, y) -> lineTo(x, y) }
+            }
+            runCatching {
+                builder.addStroke(GestureDescription.StrokeDescription(path, 0, 260))
+            }.onSuccess { added++ }
+        }
+        if (added == 0) {
+            return ToolResult.fail(ToolError("invalid_args", "strokes must contain at least one valid stroke"))
+        }
+        val dispatched = suspendCancellableCoroutine { cont ->
+            service.dispatchGesture(builder.build(), object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) = cont.resume(true)
+                override fun onCancelled(gestureDescription: GestureDescription?) = cont.resume(false)
+            }, null)
+        }
+        if (!dispatched) return ToolResult.fail(ToolError.internal("Draw gesture was cancelled"))
+        settle(minDelayMs = 180)
+        val after = currentSnapshot()
+        return ToolResult.ok(
+            changed = after.hash != before.hash,
+            observed = observed(after, "Drew $added stroke(s)"),
         )
     }
 
@@ -64,7 +100,7 @@ class GestureInjector(
             }, null)
         }
         if (!dispatched) return ToolResult.fail(ToolError.internal("Gesture was cancelled"))
-        delay(280)
+        settle(minDelayMs = 160)
         val after = currentSnapshot()
         return ToolResult.ok(changed = after.hash != before.hash, observed = observed(after, "Swiped"))
     }
@@ -98,7 +134,7 @@ class GestureInjector(
                 }, null)
             }
         }
-        delay(320)
+        settle(minDelayMs = 180)
         val after = currentSnapshot()
         return ToolResult.ok(changed = after.hash != before.hash, observed = observed(after, "Scrolled $direction"))
     }
@@ -112,9 +148,15 @@ class GestureInjector(
         val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         }
-        val ok = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        // Hold a short keyboard lease so IME animations/contention cannot steal focus mid-write.
+        KeyboardLease.acquire(service, "set_value")
+        val ok = try {
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        } finally {
+            KeyboardLease.release()
+        }
         if (!ok) return ToolResult.fail(ToolError.unsupported("This field does not accept set_value; try type_text"))
-        delay(240)
+        settle(minDelayMs = 140)
         val after = currentSnapshot()
         return ToolResult.ok(changed = after.hash != before.hash, observed = observed(after, "Set value"))
     }
@@ -130,13 +172,18 @@ class GestureInjector(
         val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, combined)
         }
-        val ok = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        KeyboardLease.acquire(service, "type_text")
+        val ok = try {
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        } finally {
+            KeyboardLease.release()
+        }
         if (!ok) return ToolResult.fail(ToolError.unsupported("This field rejected text input"))
         if (submit) {
             delay(120)
             pressEnter()
         }
-        delay(260)
+        settle(minDelayMs = 140)
         val after = currentSnapshot()
         return ToolResult.ok(changed = after.hash != before.hash, observed = observed(after, "Typed text"))
     }
@@ -152,7 +199,7 @@ class GestureInjector(
             "tab" -> Unit
             else -> return ToolResult.fail(ToolError.unsupported("Unknown key: $key"))
         }
-        delay(220)
+        settle(minDelayMs = 120)
         val after = currentSnapshot()
         return ToolResult.ok(changed = true, observed = observed(after, "Pressed $key"))
     }
@@ -174,6 +221,31 @@ class GestureInjector(
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, current.dropLast(1))
             }
             focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        }
+    }
+
+    /**
+     * Wait for the UI to settle after a mutation: at least [minDelayMs], then until the
+     * screen snapshot (hash/generation) is stable for [stableWindowMs] or [timeoutMs] elapses.
+     */
+    private suspend fun settle(
+        minDelayMs: Long = 120,
+        timeoutMs: Long = 1_800,
+        stableWindowMs: Long = 220,
+    ) {
+        delay(minDelayMs)
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var last = runCatching { currentSnapshot() }.getOrNull() ?: return
+        var stableSince = System.currentTimeMillis()
+        while (System.currentTimeMillis() < deadline) {
+            delay(80)
+            val now = runCatching { currentSnapshot() }.getOrNull() ?: return
+            if (now.hash == last.hash && now.generation == last.generation) {
+                if (System.currentTimeMillis() - stableSince >= stableWindowMs) return
+            } else {
+                last = now
+                stableSince = System.currentTimeMillis()
+            }
         }
     }
 

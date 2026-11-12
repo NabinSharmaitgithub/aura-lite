@@ -1,5 +1,6 @@
 package com.aura.mcp.tools
 
+import com.aura.mcp.Toolset
 import com.aura.mcp.bridge.ToolDefinition
 import com.aura.mcp.bridge.ToolDomain
 import kotlinx.serialization.json.JsonObject
@@ -181,6 +182,17 @@ object ToolCatalog {
             ToolDomain.UI,
         ),
         ToolDefinition(
+            "draw",
+            "Draw one or more freehand strokes (signature, sketch, pattern). Each stroke is an array of [x,y] points; up to 10 strokes, 2–200 points each.",
+            schema(
+                required = listOf("strokes"),
+                props = mapOf(
+                    "strokes" to arr("Array of strokes. Each stroke is an array of [x,y] coordinate pairs.", "array"),
+                ),
+            ),
+            ToolDomain.UI, mutating = true,
+        ),
+        ToolDefinition(
             "run_steps",
             "Execute a batch of tool calls in order. Each step is {tool, args}. Stops on first failure.",
             schema(
@@ -274,6 +286,16 @@ object ToolCatalog {
 
     val session: List<ToolDefinition> = listOf(
         ToolDefinition("ask_user", "Ask the user a question and wait for their answer. Use only when the goal is ambiguous, a choice is required, or you cannot safely proceed without input. Answer comes back as text.", schema(required = listOf("question"), props = mapOf("question" to str("The question to ask, in at most two short sentences."), "options" to arr("Suggested answers (rendered as buttons); omit for free text."), "timeout_s" to int("Max seconds to wait for an answer.", 300, 10, 1800))), ToolDomain.SESSION),
+        ToolDefinition("ask_aura", "Conversation handoff: delegate a concrete device/app action request to the on-device AURA agent runtime and return its result/summary. Use from conversation/live modes instead of performing device actions directly outside policy.", schema(required = listOf("goal"), props = mapOf("goal" to str("The action or question for AURA to handle on-device."), "context" to str("Optional conversational context."), "voice" to bool("Whether the request originated from voice.", false))), ToolDomain.SESSION, mutating = true),
+        ToolDefinition("load_tools", "Load additional tool schemas on demand when the current toolset is not enough. Pass exact tool names from the tool index; already-loaded tools are ignored.", schema(required = listOf("tools"), props = mapOf("tools" to arr("Tool names to load into the active run."))), ToolDomain.SESSION),
+        ToolDefinition("ledger_add_fact", "Record a durable fact discovered during this run (name, value, source). Facts are re-injected into the prompt.", schema(required = listOf("key", "value"), props = mapOf("key" to str("Short fact key."), "value" to str("Fact value."), "source" to str("Where the fact came from."))), ToolDomain.SESSION),
+        ToolDefinition("ledger_note_dead_end", "Record an approach that failed so the agent does not repeat it.", schema(required = listOf("note"), props = mapOf("note" to str("What failed and why."))), ToolDomain.SESSION),
+        ToolDefinition("ledger_update_step", "Update the status of a plan step in the run ledger.", schema(required = listOf("id", "status"), props = mapOf("id" to str("Plan step id, e.g. s1."), "status" to str("New status.", "done", listOf("pending", "in_progress", "done", "blocked", "skipped")), "note" to str("Optional note."))), ToolDomain.SESSION),
+        ToolDefinition("memory_remember", "Store a durable user preference/fact in long-term memory.", schema(required = listOf("text"), props = mapOf("text" to str("What to remember."), "scope" to str("global or an app package name.", "global"))), ToolDomain.SESSION),
+        ToolDefinition("memory_search", "Search durable memory for facts relevant to a query.", schema(required = listOf("query"), props = mapOf("query" to str("Search text."), "limit" to int("Maximum facts to return.", 10, 1, 50))), ToolDomain.SESSION),
+        ToolDefinition("proof_status", "Return the completion-evidence summary for this run (tool/observation/mutation outcomes).", schema(), ToolDomain.SESSION),
+        ToolDefinition("skills_list", "List the user-enabled skill packs and their triggers for this run.", schema(), ToolDomain.SESSION),
+        ToolDefinition("research_search", "Run an on-demand web research search and return results for the current step.", schema(required = listOf("query"), props = mapOf("query" to str("What to research."), "max_results" to int("Maximum results.", 5, 1, 10))), ToolDomain.SESSION),
         ToolDefinition("end_session", "End the current agent run with an outcome and summary.", schema(props = mapOf("outcome" to str("Outcome.", "success", listOf("success", "failure", "cancelled", "budget_exhausted", "permission_denied")), "summary" to str("One-line summary for the user."))), ToolDomain.SESSION),
     )
 
@@ -281,6 +303,22 @@ object ToolCatalog {
         ui + apps + data + system + media + web + browser + session
 
     val byName: Map<String, ToolDefinition> = all.associateBy { it.name }
+
+    /**
+     * Toolset grouping used for principal scoping. Browser automation is BROWSER; conversation,
+     * HITL, memory/ledger helpers and notifications/media are ASSISTANT; everything else is CORE.
+     */
+    fun toolsetOf(name: String): Toolset = when {
+        name.startsWith("browser_") || name == "web_search" -> Toolset.BROWSER
+        name in setOf(
+            "ask_user", "ask_aura", "load_tools", "end_session",
+            "ledger_add_fact", "ledger_note_dead_end", "ledger_update_step",
+            "memory_remember", "memory_search", "proof_status", "skills_list", "research_search",
+            "read_notifications", "notification_action", "dismiss_notification",
+            "media_control", "get_media_sessions",
+        ) -> Toolset.ASSISTANT
+        else -> Toolset.CORE
+    }
 
     fun require(name: String): ToolDefinition =
         byName[name] ?: error("Unknown tool: $name")
