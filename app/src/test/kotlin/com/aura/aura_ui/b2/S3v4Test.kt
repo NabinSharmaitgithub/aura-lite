@@ -102,7 +102,7 @@ class S3v4Test {
         secret: String,
         endpoint: String = "s3.us-east-005.backblazeb2.com",
         query: Map<String, String> = emptyMap(),
-    ): String = S3v4.sign(
+    ) = S3v4.sign(
         method = "GET",
         bucket = "aura-lite-storage",
         key = "users/x",
@@ -112,5 +112,5 @@ class S3v4Test {
         secretAccessKey = secret,
         endpoint = endpoint,
         now = Instant.parse("2026-11-12T00:00:00Z"),
-    ).headers["authorization"].orEmpty()
+    )
 }
