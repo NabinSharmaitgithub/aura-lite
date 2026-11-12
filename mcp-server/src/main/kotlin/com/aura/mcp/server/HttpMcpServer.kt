@@ -127,17 +127,7 @@ class HttpMcpServer(
         val params = request["params"] as? JsonObject ?: JsonObject(emptyMap())
 
         return when (method) {
-            "initialize" -> success(
-                id,
-                buildJsonObject {
-                    put("protocolVersion", params["protocolVersion"]?.jsonPrimitive?.content ?: "2025-03-26")
-                    putJsonObject("serverInfo") {
-                        put("name", "aura")
-                        put("version", com.aura.mcp.BuildConfig.VERSION_NAME)
-                    }
-                    putJsonObject("capabilities") { putJsonObject("tools") {} }
-                },
-            )
+            "initialize" -> success(id, McpRpc.initializeResult())
 
             "ping" -> success(id, buildJsonObject { })
 
@@ -172,9 +162,24 @@ class HttpMcpServer(
                 )
             }
 
-            "prompts/list" -> success(id, buildJsonObject { put("prompts", JsonArray(emptyList())) })
+            "prompts/list" -> success(id, buildJsonObject { put("prompts", McpRpc.promptsList()) })
 
-            "resources/list" -> success(id, buildJsonObject { put("resources", JsonArray(emptyList())) })
+            "prompts/get" -> {
+                val name = params["name"]?.jsonPrimitive?.content ?: return errorResponse(id, -32602, "missing prompt name")
+                val arguments = params["arguments"] as? JsonObject ?: JsonObject(emptyMap())
+                val prompt = McpRpc.getPrompt(name, arguments)
+                    ?: return errorResponse(id, -32602, "unknown prompt: $name")
+                success(id, prompt)
+            }
+
+            "resources/list" -> success(id, buildJsonObject { put("resources", McpRpc.resourcesList()) })
+
+            "resources/read" -> {
+                val uri = params["uri"]?.jsonPrimitive?.content ?: return errorResponse(id, -32602, "missing resource uri")
+                val resource = McpRpc.readResource(uri)
+                    ?: return errorResponse(id, -32602, "unknown resource: $uri")
+                success(id, resource)
+            }
 
             else -> errorResponse(id, -32601, "method not found: $method")
         }

@@ -46,6 +46,7 @@ class AuraDeviceBridge @Inject constructor(
     private val perception: PerceptionEngine,
     private val search: WebSearchClient,
     private val b2: com.aura.aura_ui.b2.B2Service,
+    private val askUsers: com.aura.aura_ui.agent.AskUserBroker,
 ) : DeviceBridge {
 
     override suspend fun execute(tool: String, args: JsonObject): ToolResult {
@@ -298,6 +299,18 @@ class AuraDeviceBridge @Inject constructor(
                 ToolResult.ok(changed = true)
             }
 
+            "ask_user" -> {
+                val question = JsonArgs.str(args, "question") ?: return ToolResult.fail(ToolError.notFound("question is required"))
+                val options = (args["options"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull {
+                    (it as? kotlinx.serialization.json.JsonPrimitive)?.content
+                } ?: emptyList()
+                val timeoutSec = (args["timeout_s"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() ?: 300L
+                val answer = askUsers.ask(question, options, timeoutSec)
+                ToolResult.ok(observed = buildJsonObject {
+                    put("answer", answer)
+                    put("awaited", true)
+                })
+            }
             "end_session" -> ToolResult.ok(
                 observed = buildJsonObject {
                     put("outcome", JsonArgs.str(args, "outcome") ?: "success")

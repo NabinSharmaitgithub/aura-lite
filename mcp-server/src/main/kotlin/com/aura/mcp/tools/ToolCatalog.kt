@@ -272,6 +272,7 @@ object ToolCatalog {
     )
 
     val session: List<ToolDefinition> = listOf(
+        ToolDefinition("ask_user", "Ask the user a question and wait for their answer. Use only when the goal is ambiguous, a choice is required, or you cannot safely proceed without input. Answer comes back as text.", schema(required = listOf("question"), props = mapOf("question" to str("The question to ask, in at most two short sentences."), "options" to arr("Suggested answers (rendered as buttons); omit for free text."), "timeout_s" to int("Max seconds to wait for an answer.", 300, 10, 1800))), ToolDomain.SESSION),
         ToolDefinition("end_session", "End the current agent run with an outcome and summary.", schema(props = mapOf("outcome" to str("Outcome.", "success", listOf("success", "failure", "cancelled", "budget_exhausted", "permission_denied")), "summary" to str("One-line summary for the user."))), ToolDomain.SESSION),
     )
 
