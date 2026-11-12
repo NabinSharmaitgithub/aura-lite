@@ -174,6 +174,12 @@ class SessionWriter internal constructor(
         )
 
     fun screenshotDir(): File = File(dir, "screens").also { it.mkdirs() }
+
+    fun writeLedger(json: String) {
+        synchronized(lock) { runCatching { File(dir, "ledger.json").writeText(json) } }
+    }
+
+    fun readLedger(): String? = runCatching { File(dir, "ledger.json").takeIf { it.exists() }?.readText() }.getOrNull()
 }
 
 @Singleton

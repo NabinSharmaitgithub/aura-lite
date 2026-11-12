@@ -33,6 +33,10 @@ data class ToolError(
         const val INTERNAL = "internal"
         const val CANCELLED = "cancelled"
         const val APPROVAL_DENIED = "approval_denied"
+        const val POLICY_BLOCKED = "policy_blocked"
+        const val SCOPE_DENIED = "scope_denied"
+        const val PAUSED_BY_USER = "paused_by_user"
+        const val ACTION_GUARD = "action_guard"
 
         fun permissionDenied(message: String, fix: String? = null) =
             ToolError(PERMISSION_DENIED, message, fix)
@@ -42,6 +46,10 @@ data class ToolError(
         fun timeout(message: String) = ToolError(TIMEOUT, message)
         fun unsupported(message: String) = ToolError(UNSUPPORTED, message)
         fun internal(message: String) = ToolError(INTERNAL, message)
+        fun policyBlocked(message: String, fix: String? = null) = ToolError(POLICY_BLOCKED, message, fix)
+        fun scopeDenied(message: String) = ToolError(SCOPE_DENIED, message)
+        fun paused(message: String = "Paused by user") = ToolError(PAUSED_BY_USER, message)
+        fun actionGuard(message: String, fix: String? = null) = ToolError(ACTION_GUARD, message, fix)
     }
 }
 

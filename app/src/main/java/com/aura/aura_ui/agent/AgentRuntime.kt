@@ -1,5 +1,7 @@
 package com.aura.aura_ui.agent
 
+import com.aura.aura_ui.agent.ledger.RunBudget
+import com.aura.aura_ui.agent.ledger.RunLedger
 import com.aura.aura_ui.agent.llm.LlmClient
 import com.aura.aura_ui.agent.llm.LlmEndpointCatalog
 import com.aura.aura_ui.agent.llm.LlmMessage
@@ -169,6 +171,10 @@ class AgentRuntime @Inject constructor(
         writer = session
         _state.value = _state.value.copy(sessionId = session.sessionId)
 
+        val ledger = RunLedger.create(session.sessionId, goal)
+        val budget = RunBudget(maxSteps = settings.maxSteps)
+        runCatching { session.writeLedger(ledger.snapshotJson()) }
+
         val foreground = runCatching { bridge.foregroundPackage() }.getOrNull()
         val toolDefs = mcp.listTools()
         val toolSpecs = toolDefs.map { LlmToolSpec(it.name, it.description, it.inputSchema) }
@@ -180,6 +186,8 @@ class AgentRuntime @Inject constructor(
             skills = enabledSkills,
             recentFailures = recentFailures.toList(),
             screenshotCapable = settings.screenCaptureEnabled,
+            ledgerBlock = ledger.toPromptBlock(),
+            budgetNote = "Max steps ${settings.maxSteps}. Verify after mutating actions.",
         )
         val messages = mutableListOf(
             LlmMessage.system(system),
@@ -196,11 +204,21 @@ class AgentRuntime @Inject constructor(
         try {
             val maxSteps = settings.maxSteps
             while (!cancelRequested && steps < maxSteps) {
+                val stopReason = budget.shouldStop(steps)
+                if (stopReason != null) {
+                    outcome = SessionOutcome.BUDGET_EXHAUSTED
+                    finalAnswer = "Stopped: $stopReason"
+                    session.error(finalAnswer!!)
+                    ledger.finish(outcome, finalAnswer)
+                    runCatching { session.writeLedger(ledger.snapshotJson()) }
+                    break
+                }
                 awaitResume()
                 if (cancelRequested) break
 
                 _state.value = _state.value.copy(status = "planning", streamText = "")
                 session.thought("Planning the next action.")
+                budget.onRequest()
                 val response = callModel(
                     endpoint = endpoint,
                     key = key,
@@ -305,10 +323,15 @@ class AgentRuntime @Inject constructor(
                     messages += LlmMessage.tool(call.id, call.name, result.toJson().toString())
 
                     if (!result.ok) {
+                        budget.onFailure()
                         val message = result.error?.let { "${call.name}: ${it.code} — ${it.message}" }
                             ?: "${call.name} failed"
                         recentFailures.addFirst(message)
                         while (recentFailures.size > 8) recentFailures.removeLast()
+                        ledger.addDeadEnd(message)
+                        runCatching { session.writeLedger(ledger.snapshotJson()) }
+                    } else {
+                        budget.onSuccess()
                     }
 
                     if (definition.mutating) {
@@ -357,6 +380,8 @@ class AgentRuntime @Inject constructor(
                 finalAnswer = if (cancelRequested) "Stopped." else "I used all $maxSteps steps without finishing. Nothing else was changed."
             }
 
+            ledger.finish(outcome, finalAnswer)
+            runCatching { session.writeLedger(ledger.snapshotJson()) }
             endSession(session, outcome, steps, finalAnswer)
             _state.value = _state.value.copy(
                 running = false,

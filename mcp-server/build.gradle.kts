@@ -45,6 +45,7 @@ dependencies {
     implementation(libs.ktor.server.status.pages)
     implementation(libs.ktor.serialization.json)
     implementation(libs.androidx.security.crypto)
+    implementation(libs.webrtc)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

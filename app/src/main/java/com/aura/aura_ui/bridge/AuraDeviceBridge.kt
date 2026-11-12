@@ -55,7 +55,7 @@ class AuraDeviceBridge @Inject constructor(
             "read_screen" -> readScreen(args)
             "tap" -> withService { service ->
                 service.gestures.tap(
-                    index = JsonArgs.int(args, "index"),
+                    index = JsonArgs.int(args, "index") ?: JsonArgs.int(args, "som_id"),
                     bounds = JsonArgs.intList(args, "bounds"),
                     text = JsonArgs.str(args, "text"),
                     x = JsonArgs.float(args, "x"),
@@ -78,18 +78,18 @@ class AuraDeviceBridge @Inject constructor(
                 service.gestures.scroll(
                     direction = JsonArgs.str(args, "direction") ?: "down",
                     amount = JsonArgs.float(args, "amount"),
-                    index = JsonArgs.int(args, "index"),
+                    index = JsonArgs.int(args, "index") ?: JsonArgs.int(args, "som_id"),
                 )
             }
             "set_value" -> withService { service ->
                 val text = JsonArgs.rawStr(args, "text")
                     ?: return@withService ToolResult.fail(ToolError("invalid_args", "text is required"))
-                service.gestures.setValue(JsonArgs.int(args, "index"), text)
+                service.gestures.setValue(JsonArgs.int(args, "index") ?: JsonArgs.int(args, "som_id"), text)
             }
             "type_text" -> withService { service ->
                 val text = JsonArgs.rawStr(args, "text")
                     ?: return@withService ToolResult.fail(ToolError("invalid_args", "text is required"))
-                service.gestures.typeText(text, JsonArgs.int(args, "index"), JsonArgs.bool(args, "submit"))
+                service.gestures.typeText(text, JsonArgs.int(args, "index") ?: JsonArgs.int(args, "som_id"), JsonArgs.bool(args, "submit"))
             }
             "press_key" -> withService { service ->
                 val key = JsonArgs.str(args, "key")
@@ -105,7 +105,7 @@ class AuraDeviceBridge @Inject constructor(
             "verify_action" -> withService { service ->
                 val expectation = JsonArgs.str(args, "expectation")
                     ?: return@withService ToolResult.fail(ToolError("invalid_args", "expectation is required"))
-                service.gestures.verify(expectation, JsonArgs.int(args, "index"))
+                service.gestures.verify(expectation, JsonArgs.int(args, "index") ?: JsonArgs.int(args, "som_id"))
             }
             "run_steps" -> ToolResult.fail(
                 ToolError.unsupported("run_steps is dispatched by the tool registry, not the device bridge"),

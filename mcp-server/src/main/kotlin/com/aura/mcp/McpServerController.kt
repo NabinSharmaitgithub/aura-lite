@@ -1,7 +1,10 @@
 package com.aura.mcp
 
 import android.content.Context
+import android.util.Log
 import com.aura.mcp.audit.McpAuditLogger
+import com.aura.mcp.bridge.TrustedClientsStore
+import com.aura.mcp.bridge.WebRtcTransport
 import com.aura.mcp.lan.MdnsAdvertiser
 import com.aura.mcp.lan.PairingCrypto
 import com.aura.mcp.lan.PairingPayload
@@ -9,6 +12,7 @@ import com.aura.mcp.lan.ServerIdentity
 import com.aura.mcp.lan.TrustedDevice
 import com.aura.mcp.lan.TrustedDeviceStore
 import com.aura.mcp.server.HttpMcpServer
+import com.aura.mcp.server.WebRtcJsonRpcBridge
 import com.aura.mcp.tools.McpToolRegistry
 import com.aura.mcp.tools.ToolCatalog
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -17,6 +21,10 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,12 +46,27 @@ class McpServerController @Inject constructor(
     private var server: HttpMcpServer? = null
     private var boundPort: Int = DEFAULT_PORT
 
+    // WebRTC (aura-mcp-connect compatible) transport support
+    private var webRtcTransport: WebRtcTransport? = null
+    private var webRtcBridge: WebRtcJsonRpcBridge? = null
+    private var webRtcScope: CoroutineScope? = null
+    private val webRtcTrustedClients by lazy {
+        TrustedClientsStore(
+            load = { context.getSharedPreferences("aura_prefs", Context.MODE_PRIVATE).getString("webrtc_trusted_clients", null) },
+            save = { json -> context.getSharedPreferences("aura_prefs", Context.MODE_PRIVATE).edit().putString("webrtc_trusted_clients", json).apply() },
+            loadLegacyTokens = {
+                context.getSharedPreferences("aura_prefs", Context.MODE_PRIVATE).getStringSet("webrtc_trusted_tokens", emptySet()) ?: emptySet()
+            },
+        )
+    }
+
     private val _health = MutableStateFlow(
         McpServerHealth(toolCount = ToolCatalog.all.size, clientCount = 0),
     )
     val health: StateFlow<McpServerHealth> = _health.asStateFlow()
 
-    val isRunning: Boolean get() = server != null
+    val isRunning: Boolean get() = server != null || webRtcTransport != null
+    val webRtcPin: String? get() = runCatching { /* exposed via status */ null }.getOrNull()
 
     fun start(port: Int = DEFAULT_PORT): McpServerHealth {
         if (server != null) return _health.value
@@ -83,7 +106,60 @@ class McpServerController @Inject constructor(
         runCatching { server?.stop() }
         server = null
         mdns.stop()
+        stopWebRtc()
         _health.value = _health.value.copy(running = false, port = 0)
+    }
+
+    /** Starts WebRTC LAN MCP transport compatible with aura-mcp-connect signaling/pairing. */
+    fun startWebRtc(): String? {
+        if (webRtcTransport != null) return null
+        return runCatching {
+            val transport = WebRtcTransport(context, trustedClients = webRtcTrustedClients)
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            val bridge = WebRtcJsonRpcBridge(transport, registry, scope)
+            transport.onStatusChanged = { status ->
+                _health.value = _health.value.copy(
+                    running = true,
+                    host = status.addresses.firstOrNull() ?: "LAN",
+                    port = status.port,
+                    clientCount = webRtcTrustedClients.clients.value.size,
+                    toolCount = ToolCatalog.all.size,
+                )
+            }
+            val status = transport.startListening()
+            webRtcTransport = transport
+            webRtcBridge = bridge
+            webRtcScope = scope
+            _health.value = McpServerHealth(
+                running = true,
+                host = status.addresses.firstOrNull() ?: "LAN",
+                port = status.port,
+                toolCount = ToolCatalog.all.size,
+                clientCount = webRtcTrustedClients.clients.value.size,
+                startedAt = System.currentTimeMillis(),
+            )
+            Log.i("McpServerController", "WebRTC MCP listening on ${status.port}, pin=${status.pin}")
+            status.pin
+        }.getOrElse { e ->
+            Log.w("McpServerController", "Failed to start WebRTC MCP", e)
+            _health.value = _health.value.copy(running = false, lastError = e.message)
+            null
+        }
+    }
+
+    fun stopWebRtc() {
+        runCatching { webRtcBridge?.close() }
+        runCatching { webRtcTransport?.close() }
+        runCatching { webRtcScope?.cancel() }
+        webRtcBridge = null
+        webRtcTransport = null
+        webRtcScope = null
+    }
+
+    fun webRtcTrustedClients() = webRtcTrustedClients.clients.value
+    fun revokeWebRtcClient(token: String) {
+        webRtcTrustedClients.revoke(token)
+        _health.value = _health.value.copy(clientCount = trustedDevices.list().size + webRtcTrustedClients.clients.value.size)
     }
 
     fun pairingPayload(): PairingPayload? {

@@ -110,6 +110,8 @@ class UiTreeExtractor(
         put("package", snapshot.packageName)
         put("summary", snapshot.summary)
         put("generation", snapshot.generation)
+        put("screen_generation", snapshot.generation)
+        put("screen_signature", snapshot.hash.toString())
         put("changed", snapshot.changed)
         put("node_count", snapshot.nodes.size)
         put(
@@ -119,6 +121,7 @@ class UiTreeExtractor(
                     add(
                         buildJsonObject {
                             put("i", node.index)
+                            put("som_id", node.index) // alias for AURA-style grounding
                             if (node.text.isNotBlank()) put("text", node.text)
                             if (node.description.isNotBlank()) put("desc", node.description)
                             if (node.className.isNotBlank()) put("class", node.className)
@@ -145,6 +148,8 @@ class UiTreeExtractor(
                 }
             },
         )
+        // compact list alias for consumers expecting element arrays
+        put("elements", this["nodes"] ?: buildJsonArray { })
     }
 
     fun stableKey(snapshot: ScreenSnapshot): String =

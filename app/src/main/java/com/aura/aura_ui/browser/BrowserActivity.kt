@@ -103,6 +103,13 @@ object BrowserController {
     private var webViewRef: WeakReference<WebView>? = null
     private var pageWaiter: ((String) -> Unit)? = null
     @Volatile private var currentUrl: String = ""
+    @Volatile private var generation: Long = 0
+    @Volatile private var handoffActive: Boolean = false
+    private val elementHandles = linkedMapOf<String, String>() // el_id -> selector-ish hint
+
+    fun generation(): Long = generation
+    fun isHandoffActive(): Boolean = handoffActive
+    fun clearHandoff() { handoffActive = false }
 
     fun attach(activity: BrowserActivity, webView: WebView) {
         activityRef = WeakReference(activity)
@@ -118,6 +125,8 @@ object BrowserController {
 
     fun onPageFinished(url: String, title: String, webView: WebView?) {
         currentUrl = url
+        generation += 1
+        elementHandles.clear()
         if (webView != null) webViewRef = WeakReference(webView)
         pageWaiter?.invoke(title)
         pageWaiter = null
@@ -151,9 +160,15 @@ object BrowserController {
         """
         (function(){
           var el = ${if (selector == null) "document.body" else "document.querySelector(${quote(selector)})"};
-          if (!el) return "";
-          var text = el.innerText || el.textContent || "";
-          return text.slice(0, $maxChars);
+          if (!el) return JSON.stringify({error:"not_found", generation:${generation}});
+          var text = (el.innerText || el.textContent || "").slice(0, $maxChars);
+          var nodes = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role="button"],[onclick]')).slice(0,80).map(function(e,i){
+            var r=e.getBoundingClientRect();
+            var id='el_'+${generation}+'_'+i;
+            e.setAttribute('data-aura-el', id);
+            return {el_id:id, tag:e.tagName.toLowerCase(), text:(e.innerText||e.value||e.getAttribute('aria-label')||'').trim().slice(0,120), href:e.href||null, x:Math.round(r.x), y:Math.round(r.y), w:Math.round(r.width), h:Math.round(r.height)};
+          });
+          return JSON.stringify({url:location.href,title:document.title,generation:${generation},text:text,elements:nodes});
         })()
         """.trimIndent(),
     )
@@ -176,35 +191,42 @@ object BrowserController {
         element as? JsonObject
     }.orEmpty() }
 
-    suspend fun act(action: String, selector: String?, text: String?, direction: String?): Result<String> = evaluate(
-        when (action) {
-            "click" -> """
-                (function(){var el=document.querySelector(${quote(selector ?: "body")});if(!el)return "not_found";el.click();return "clicked";})()
-            """.trimIndent()
-            "type" -> """
-                (function(){var el=document.querySelector(${quote(selector ?: "input,textarea")});if(!el)return "not_found";
-                el.focus();el.value=${quote(text.orEmpty())};el.dispatchEvent(new Event('input',{bubbles:true}));
-                el.dispatchEvent(new Event('change',{bubbles:true}));return "typed";})()
-            """.trimIndent()
-            "scroll" -> """
-                (function(){var d=${quote(direction ?: "down")};
-                if(d==='up')window.scrollBy(0,-window.innerHeight*0.8);
-                else if(d==='left')window.scrollBy(-window.innerWidth*0.8,0);
-                else if(d==='right')window.scrollBy(window.innerWidth*0.8,0);
-                else window.scrollBy(0,window.innerHeight*0.8);return "scrolled";})()
-            """.trimIndent()
-            "press" -> """
-                (function(){var el=document.activeElement||document.body;
-                el.dispatchEvent(new KeyboardEvent('keydown',{key:${quote(text ?: "Enter")},bubbles:true}));
-                el.dispatchEvent(new KeyboardEvent('keyup',{key:${quote(text ?: "Enter")},bubbles:true}));return "pressed";})()
-            """.trimIndent()
-            "select" -> """
-                (function(){var el=document.querySelector(${quote(selector ?: "select")});if(!el)return "not_found";
-                el.value=${quote(text.orEmpty())};el.dispatchEvent(new Event('change',{bubbles:true}));return "selected";})()
-            """.trimIndent()
-            else -> "return 'unsupported';"
-        },
-    )
+    suspend fun act(action: String, selector: String?, text: String?, direction: String?): Result<String> {
+        if (handoffActive) return Result.failure(IllegalStateException("Browser handoff is active; user is in control"))
+        val sel = selector?.let { s ->
+            // allow el_id handles produced by browser_read
+            if (s.startsWith("el_")) "[data-aura-el=\"${s}\"]" else s
+        }
+        return evaluate(
+            when (action) {
+                "click" -> """
+                    (function(){var el=document.querySelector(${quote(sel ?: "body")});if(!el)return "not_found";el.click();return JSON.stringify({result:"clicked",generation:${generation},url:location.href});})()
+                """.trimIndent()
+                "type" -> """
+                    (function(){var el=document.querySelector(${quote(sel ?: "input,textarea")});if(!el)return "not_found";
+                    el.focus();el.value=${quote(text.orEmpty())};el.dispatchEvent(new Event('input',{bubbles:true}));
+                    el.dispatchEvent(new Event('change',{bubbles:true}));return JSON.stringify({result:"typed",generation:${generation}});})()
+                """.trimIndent()
+                "scroll" -> """
+                    (function(){var d=${quote(direction ?: "down")};
+                    if(d==='up')window.scrollBy(0,-window.innerHeight*0.8);
+                    else if(d==='left')window.scrollBy(-window.innerWidth*0.8,0);
+                    else if(d==='right')window.scrollBy(window.innerWidth*0.8,0);
+                    else window.scrollBy(0,window.innerHeight*0.8);return JSON.stringify({result:"scrolled",generation:${generation}});})()
+                """.trimIndent()
+                "press" -> """
+                    (function(){var el=document.activeElement||document.body;
+                    el.dispatchEvent(new KeyboardEvent('keydown',{key:${quote(text ?: "Enter")},bubbles:true}));
+                    el.dispatchEvent(new KeyboardEvent('keyup',{key:${quote(text ?: "Enter")},bubbles:true}));return JSON.stringify({result:"pressed",generation:${generation}});})()
+                """.trimIndent()
+                "select" -> """
+                    (function(){var el=document.querySelector(${quote(sel ?: "select")});if(!el)return "not_found";
+                    el.value=${quote(text.orEmpty())};el.dispatchEvent(new Event('change',{bubbles:true}));return JSON.stringify({result:"selected",generation:${generation}});})()
+                """.trimIndent()
+                else -> "return JSON.stringify({error:'unsupported',generation:${generation}});"
+            },
+        )
+    }
 
     suspend fun extract(selector: String?): Result<JsonObject> = evaluate(
         """
@@ -251,6 +273,7 @@ object BrowserController {
 
     suspend fun handoff(context: android.content.Context, reason: String?): Result<Unit> = withContext(Dispatchers.Main) {
         runCatching {
+            handoffActive = true
             val url = currentUrl
             if (url.isNotBlank()) {
                 context.startActivity(

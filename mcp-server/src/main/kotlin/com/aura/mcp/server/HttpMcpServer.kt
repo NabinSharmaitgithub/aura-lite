@@ -5,6 +5,7 @@ import com.aura.mcp.audit.McpAuditLogger
 import com.aura.mcp.lan.PairingCrypto
 import com.aura.mcp.lan.ServerIdentity
 import com.aura.mcp.lan.TrustedDeviceStore
+import com.aura.mcp.server.ToolAccess
 import com.aura.mcp.tools.McpToolRegistry
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
@@ -110,7 +111,8 @@ class HttpMcpServer(
                 }
                 trustedDevices.touch(device.clientId)
                 val raw = call.receiveText()
-                val response = runCatching { dispatch(raw, device.clientId) }
+                val clientRegistry = registry.withPrincipal(ToolAccess.principalFor(device.clientId, device.scopes))
+                val response = runCatching { dispatch(raw, clientRegistry) }
                     .getOrElse { error ->
                         errorResponse(null, -32603, error.message ?: "internal error")
                     }
@@ -119,7 +121,7 @@ class HttpMcpServer(
         }
     }
 
-    private suspend fun dispatch(raw: String, clientId: String): JsonObject {
+    private suspend fun dispatch(raw: String, clientRegistry: McpToolRegistry): JsonObject {
         val request = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
             ?: return errorResponse(null, -32700, "parse error")
         val id = request["id"]
@@ -134,14 +136,14 @@ class HttpMcpServer(
             "tools/list" -> success(
                 id,
                 buildJsonObject {
-                    put("tools", buildJsonArray { registry.listTools().forEach { add(it) } })
+                    put("tools", buildJsonArray { clientRegistry.listTools().forEach { add(it) } })
                 },
             )
 
             "tools/call" -> {
                 val name = params["name"]?.jsonPrimitive?.content ?: return errorResponse(id, -32602, "missing tool name")
                 val arguments = params["arguments"] as? JsonObject ?: JsonObject(emptyMap())
-                val result = registry.execute(name, arguments)
+                val result = clientRegistry.execute(name, arguments)
                 success(
                     id,
                     buildJsonObject {
