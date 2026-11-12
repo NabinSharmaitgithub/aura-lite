@@ -144,7 +144,11 @@ class AuraViewModel @Inject constructor(
             successRate = if (finished.isEmpty()) 0f else success.toFloat() / finished.size,
             avgSteps = if (finished.isEmpty()) 0f else finished.map { it.steps }.average().toFloat(),
             avgDurationMs = if (finished.isEmpty()) 0L else finished.map { it.durationMs }.average().toLong(),
-            topProvider = finished.groupingBy { it.provider.ifBlank { "—" } }.maxByOrNull { it.value.size }?.key ?: "—",
+            topProvider = run {
+                val counts = HashMap<String, Int>()
+                finished.forEach { counts[it.provider.ifBlank { "—" }] = (counts[it.provider.ifBlank { "—" }] ?: 0) + 1 }
+                counts.maxByOrNull { it.value }?.key ?: "—"
+            },
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ReportStats(0, 0f, 0f, 0L, "—"))
 
