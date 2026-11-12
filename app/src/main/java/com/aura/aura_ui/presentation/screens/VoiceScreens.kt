@@ -24,10 +24,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aura.aura_ui.presentation.AuraViewModel
 import com.aura.aura_ui.presentation.rememberPermissions
+import com.aura.aura_ui.voice.WakeWordEngine
 import com.aura.aura_ui.ui.components.AuraSwitch
 import com.aura.aura_ui.ui.components.AuraTextField
 import com.aura.aura_ui.ui.components.Badge
@@ -177,7 +179,7 @@ fun VoiceSettingsScreen(vm: AuraViewModel) {
             Text("Voice", style = androidx.compose.material3.MaterialTheme.typography.displaySmall, color = mono.textPrimary)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Wake word, listening sensitivity and the speaking voice.",
+                "Offline wake word (\"Wake up AURA\", via sherpa-onnx when model is installed), volume-key shortcut, Android assistant gesture, speech-to-text, spoken replies, and Gemini Live conversation mode.",
                 style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
                 color = mono.textSecondary,
             )
@@ -186,10 +188,10 @@ fun VoiceSettingsScreen(vm: AuraViewModel) {
                 GroupedRow(
                     title = "Wake word",
                     subtitle = when {
-                        !vm.wakeWordAvailable -> "Model not bundled · add assets/kws"
+                        !vm.wakeWordAvailable -> "Model not bundled · add assets/kws (expected: Wake up AURA)"
                         !permissions.microphone -> "Microphone permission needed"
-                        settings.wakeWordEnabled -> "Listening for “hey aura”"
-                        else -> "Off"
+                        settings.wakeWordEnabled -> "Listening for “${WakeWordEngine.configuredKeywordLabel(LocalContext.current)}”"
+                        else -> "Off (${WakeWordEngine.configuredKeywordLabel(LocalContext.current)})"
                     },
                     icon = Icons.Outlined.Mic,
                     trailing = {
@@ -214,7 +216,7 @@ fun VoiceSettingsScreen(vm: AuraViewModel) {
             if (!vm.wakeWordAvailable) {
                 SurfaceCard {
                     Text(
-                        "Wake word is disabled because the sherpa-onnx keyword model is not present in this source tree. Put encoder.onnx, decoder.onnx, joiner.onnx, tokens.txt and keywords.txt under assets/kws/ and rebuild. The service will never start without them.",
+                        "Wake word is disabled because the sherpa-onnx keyword model is not present in this source tree. Put encoder.onnx, decoder.onnx, joiner.onnx, tokens.txt and keywords.txt under assets/kws/ (configured for “Wake up AURA”) and rebuild. The service will never start without them.",
                         style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                         color = mono.textSecondary,
                     )
@@ -243,23 +245,36 @@ fun VoiceSettingsScreen(vm: AuraViewModel) {
         }
 
         item {
-            SectionHeader("Speaking voice")
+            SectionHeader("Speaking voice (TTS)")
             SurfaceCard {
+                Text(
+                    "Use system default, Google TTS (enter \"google\"), or an engine/voice string like \"com.google.android.tts|VoiceName\".",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = mono.textSecondary,
+                )
+                Spacer(Modifier.height(8.dp))
                 AuraTextField(
                     value = voiceName,
                     onValueChange = { voiceName = it },
-                    placeholder = "System default voice",
+                    placeholder = "google or system default voice",
                     textStyle = MonoStyle,
                 )
                 if (voices.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
-                    Text(voices.take(6).joinToString(" · "), style = MonoStyleSmall, color = mono.textSecondary)
+                    Text("Voices: " + voices.take(8).joinToString(" · "), style = MonoStyleSmall, color = mono.textSecondary)
                 }
                 Spacer(Modifier.height(10.dp))
-                SecondaryButton("Save voice", {
-                    vm.updateSettings { it.ttsVoice = voiceName.trim() }
-                    vm.showNotice("Voice saved")
-                })
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SecondaryButton("Save voice", {
+                        vm.updateSettings { it.ttsVoice = voiceName.trim() }
+                        vm.showNotice("Voice saved")
+                    }, modifier = Modifier.weight(1f))
+                    SecondaryButton("Use Google TTS", {
+                        voiceName = "google"
+                        vm.updateSettings { it.ttsVoice = "google" }
+                        vm.showNotice("Google TTS selected (if installed)")
+                    }, modifier = Modifier.weight(1f))
+                }
                 Spacer(Modifier.height(14.dp))
                 AuraTextField(
                     value = testLine,
@@ -273,6 +288,20 @@ fun VoiceSettingsScreen(vm: AuraViewModel) {
                     InkButton("Speak", { vm.speak(testLine) }, modifier = Modifier.weight(1f))
                     SecondaryButton("Stop", { vm.stopSpeaking() }, modifier = Modifier.weight(1f))
                 }
+            }
+            Spacer(Modifier.height(20.dp))
+        }
+
+        item {
+            SectionHeader("Shortcuts & conversation")
+            SurfaceCard {
+                Text(
+                    "• Android assistant gesture: set AURA as assistant / use Assist to start listening.\n" +
+                        "• Volume-key shortcut: double-press Volume Down (Accessibility service must be enabled).\n" +
+                        "• Gemini Live conversation mode: supported via realtime session API (GeminiLiveConversationSession); requires Gemini API key/model and host UI/service integration.",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = mono.textSecondary,
+                )
             }
             Spacer(Modifier.height(20.dp))
         }

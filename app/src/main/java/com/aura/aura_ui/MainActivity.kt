@@ -80,8 +80,7 @@ class MainActivity : ComponentActivity() {
             action == "android.intent.action.VOICE_ASSIST"
         if (!isAssist) return
         // Prefer an explicit text query if provided by the assistant gesture, otherwise start listening.
-        val query = intent.getStringExtra(Intent.EXTRA_ASSIST_INPUT_HINT_TEXT)
-            ?: intent.getStringExtra(Intent.EXTRA_TEXT)
+        val query = intent.getStringExtra(Intent.EXTRA_TEXT)
             ?: intent.getStringExtra("query")
         if (!query.isNullOrBlank()) {
             AssistantForegroundService.submit(this, query)
