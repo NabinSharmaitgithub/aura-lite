@@ -114,6 +114,10 @@ The README is the map of the implementation; those six files remain the authorit
 │   ├── build.gradle.kts
 │   ├── consumer-rules.pro
 │   └── src/main/kotlin/com/aura/mcp/
+├── benchmark/                               AndroidWorld-compatible benchmark notes and protocol
+├── docs/                                     launch, docs and decisions
+├── website/                                  static site (this file's project page; no build step)
+├── tools/                                    reference MCP client (tools/mcp_session.py)
 ├── firebase/                               OPTIONAL opt-in backend: rules, indexes, functions, README
 │   ├── firestore.rules                     owner-only rules, snapshot validation, default deny
 │   ├── firebase.json, .firebaserc, firestore.indexes.json

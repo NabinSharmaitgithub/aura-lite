@@ -14,6 +14,7 @@ import com.aura.aura_ui.data.session.SessionOutcome
 import com.aura.aura_ui.data.session.SessionWriter
 import com.aura.aura_ui.data.session.TraceType
 import com.aura.aura_ui.data.skills.SkillsRepository
+import com.aura.aura_ui.BuildConfig
 import com.aura.mcp.bridge.DeviceBridge
 import com.aura.mcp.bridge.ToolResult
 import com.aura.mcp.server.McpClient
@@ -56,12 +57,14 @@ class AgentRuntime @Inject constructor(
     private val bridge: DeviceBridge,
     private val perception: com.aura.aura_ui.perception.PerceptionEngine,
     private val b2: com.aura.aura_ui.b2.B2Service,
+    private val remoteGate: com.aura.aura_ui.firebase.RemoteGate,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Ends a run and, when the user enabled it in Settings → Backblaze, uploads its screenshots. */
     private fun endSession(session: com.aura.aura_ui.data.session.SessionWriter, outcome: String, steps: Int, answer: String?) {
         runCatching { session.end(outcome, steps, answer) }
+        runCatching { sessions.clearInterruption() }
         scope.launch { runCatching { b2.backupSession(session.sessionId) } }
     }
     private val promptBuilder = PromptBuilder(settings, learnings)
@@ -112,6 +115,28 @@ class AgentRuntime @Inject constructor(
     }
 
     private suspend fun runSession(goal: String, voice: Boolean) {
+        if (remoteGate.isBlocked()) {
+            _state.value = AgentRunState(
+                running = false,
+                goal = goal,
+                status = "error",
+                error = "AURA has been remotely disabled by its maintainers. Please update the app.",
+                outcome = SessionOutcome.PERMISSION_DENIED,
+                startedAt = System.currentTimeMillis(),
+            )
+            return
+        }
+        if (BuildConfig.VERSION_CODE < remoteGate.minSupportedVersionCode().toInt()) {
+            _state.value = AgentRunState(
+                running = false,
+                goal = goal,
+                status = "error",
+                error = "AURA Lite " + BuildConfig.VERSION_NAME + " is no longer supported; please update.",
+                outcome = SessionOutcome.PERMISSION_DENIED,
+                startedAt = System.currentTimeMillis(),
+            )
+            return
+        }
         val endpoint = if (settings.llmEndpointId == "custom") {
             LlmEndpointCatalog.fromCustomJson(settings.customEndpointJson) ?: LlmEndpointCatalog.custom
         } else {
@@ -140,6 +165,7 @@ class AgentRuntime @Inject constructor(
         }
 
         val session = sessions.newSession(goal, endpoint.id, model)
+        sessions.writeInterruption(session.sessionId, goal)
         writer = session
         _state.value = _state.value.copy(sessionId = session.sessionId)
 

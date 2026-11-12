@@ -188,7 +188,8 @@ fun MonoSettingsScreen(vm: AuraViewModel, onNavigate: (String) -> Unit) {
                 )
                 if (settings.developerModeEnabled) {
                     GroupedRow(title = "Eval suite", subtitle = "20-task quality harness", icon = Icons.Outlined.Article, onClick = { onNavigate(Routes.EVAL_SUITE) })
-                    GroupedRow(title = "Log retention", subtitle = "${settings.logRetentionDays} days", icon = Icons.Outlined.Settings, onClick = { onNavigate(Routes.ACTIVITY_RETENTION) }, isLast = true)
+                    GroupedRow(title = "Log retention", subtitle = "${settings.logRetentionDays} days", icon = Icons.Outlined.Settings, onClick = { onNavigate(Routes.ACTIVITY_RETENTION) })
+                    GroupedRow(title = "On-device report", subtitle = "Runs, success rate, top provider", icon = Icons.Outlined.Article, onClick = { onNavigate(Routes.ACTIVITY_REPORT) }, isLast = true)
                 }
             }
             Spacer(Modifier.height(22.dp))

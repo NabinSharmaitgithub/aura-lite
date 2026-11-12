@@ -44,6 +44,7 @@ class PromptBuilder(
             appendLine("8. If a permission is missing, return the structured error and tell the user the exact setting.")
             appendLine("9. Do not claim success without evidence from a tool result.")
             appendLine("10. Use run_steps for short deterministic sequences, but verify after each mutation.")
+            appendLine("11. If the app flow is unfamiliar, web_search it first; act on sourced steps, not guesses.")
             appendLine()
             appendLine("## Device")
             appendLine("- Model: ${Build.MANUFACTURER} ${Build.MODEL}")
