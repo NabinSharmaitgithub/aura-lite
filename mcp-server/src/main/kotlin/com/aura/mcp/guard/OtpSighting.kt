@@ -28,8 +28,8 @@ object OtpSighting {
     }
 
     fun redact(text: String?): String {
-        if (text.isNullOrBlank()) return text.orEmpty()
-        var out = text
+        if (text.isNullOrBlank()) return ""
+        var out: String = text
         otpPatterns.forEach { pattern ->
             out = pattern.replace(out) { match ->
                 val value = match.value
