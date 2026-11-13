@@ -107,7 +107,8 @@ class RunLedger(
             appendLine("Plan:")
             state.steps.forEach { s ->
                 append("- [${s.status}] ${s.id}: ${s.description}")
-                if (!s.note.isNullOrBlank()) append(" (${s.note})")
+                val note = s.note
+                if (!note.isNullOrBlank()) append(" ($note)")
                 appendLine()
             }
         }

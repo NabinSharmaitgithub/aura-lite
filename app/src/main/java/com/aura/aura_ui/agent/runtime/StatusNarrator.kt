@@ -4,6 +4,7 @@ import com.aura.aura_ui.state.NarrationState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /** User-facing status narration stream for agent progress (status strip / overlays). */

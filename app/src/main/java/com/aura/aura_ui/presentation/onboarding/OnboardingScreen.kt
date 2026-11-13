@@ -268,7 +268,7 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
                     Text("This step is optional and can be skipped.", style = MonoStyleSmall, color = mono.textSecondary)
                 }
 
-                4 -> PermissionStep(
+                OnboardingStep.ACCESSIBILITY -> PermissionStep(
                     icon = Icons.Outlined.AccessibilityNew,
                     title = "Accessibility service",
                     body = "This is how AURA reads the screen and taps, types and scrolls. Without it, every UI tool returns permission_denied.",
@@ -278,7 +278,7 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
                     footnote = "AURA never reads passwords. It stops when you pause.",
                 )
 
-                5 -> PermissionStep(
+                OnboardingStep.OVERLAY -> PermissionStep(
                     icon = Icons.Outlined.Layers,
                     title = "Display over other apps",
                     body = "The companion pill and live trace float above the current app so you can pause without switching back.",
@@ -288,7 +288,7 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
                     footnote = "You can revoke this later in system settings.",
                 )
 
-                6 -> PermissionStep(
+                OnboardingStep.NOTIFICATIONS -> PermissionStep(
                     icon = Icons.Outlined.Notifications,
                     title = "Notification access",
                     body = "AURA can read and dismiss notifications only when you ask it to. This is a standard Android listener, not a cloud service.",
@@ -419,7 +419,7 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
             )
             if (step.index in 3..7) {
                 Spacer(Modifier.height(8.dp))
-                GhostButton("Skip for now", { go(step + 1) }, modifier = Modifier.align(Alignment.CenterHorizontally))
+                GhostButton("Skip for now", { go(step.next().index) }, modifier = Modifier.align(Alignment.CenterHorizontally))
             }
         }
     }

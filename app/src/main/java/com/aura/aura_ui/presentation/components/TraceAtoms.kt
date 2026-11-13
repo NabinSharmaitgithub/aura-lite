@@ -276,10 +276,11 @@ fun RunTodoList(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        if (!step.note.isNullOrBlank()) {
+                        val note = step.note
+                        if (!note.isNullOrBlank()) {
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                step.note,
+                                note,
                                 style = MonoStyleSmall,
                                 color = mono.textSecondary,
                                 maxLines = 2,
