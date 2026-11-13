@@ -1,5 +1,6 @@
 package com.aura.aura_ui.agent.conversation
 
+import com.aura.aura_ui.state.LiveSessionState
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -12,7 +13,6 @@ import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Gemini Live conversation session.
@@ -56,11 +56,13 @@ class GeminiLiveConversationSession(
 ) : LiveConversationSession {
 
     private val _events = MutableSharedFlow<LiveEvent>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-    private val active = AtomicBoolean(false)
+    @Volatile private var liveState: LiveSessionState = LiveSessionState.CLOSED
     @Volatile private var socket: WebSocket? = null
     @Volatile private var currentConfig: LiveConfig? = null
 
-    override val isActive: Boolean get() = active.get()
+    /** Explicit session lifecycle; replaced the old `active` boolean. */
+    val state: LiveSessionState get() = liveState
+    override val isActive: Boolean get() = liveState.canSend
     override fun events(): Flow<LiveEvent> = _events.asSharedFlow()
 
     override suspend fun start(config: LiveConfig): Result<Unit> = runCatching {
@@ -71,6 +73,7 @@ class GeminiLiveConversationSession(
         if (key.isBlank()) throw IllegalStateException("Gemini API key is required for Live mode")
         stop()
         currentConfig = config
+        liveState = LiveSessionState.CONNECTING
         val model = config.model?.ifBlank { null } ?: "models/gemini-2.0-flash-exp"
         val modelName = if (model.startsWith("models/")) model else "models/$model"
         val url = config.endpoint?.ifBlank { null }
@@ -78,7 +81,7 @@ class GeminiLiveConversationSession(
         val request = Request.Builder().url(url).build()
         val ws = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                active.set(true)
+                liveState = LiveSessionState.CONNECTED
                 _events.tryEmit(LiveEvent.Status("connected", modelName))
                 val setup = JSONObject().apply {
                     put("setup", JSONObject().apply {
@@ -103,18 +106,19 @@ class GeminiLiveConversationSession(
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                liveState = LiveSessionState.CLOSING
                 _events.tryEmit(LiveEvent.Status("closing", "$code $reason"))
                 webSocket.close(code, reason)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                active.set(false)
+                liveState = LiveSessionState.CLOSED
                 socket = null
                 _events.tryEmit(LiveEvent.Status("closed", "$code $reason"))
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                active.set(false)
+                liveState = LiveSessionState.FAILED
                 socket = null
                 _events.tryEmit(LiveEvent.Error(t.message ?: "Gemini Live connection failed", recoverable = true))
                 _events.tryEmit(LiveEvent.Status("failed"))
@@ -127,6 +131,7 @@ class GeminiLiveConversationSession(
         runCatching {
             val root = JSONObject(text)
             if (root.has("setupComplete")) {
+                liveState = LiveSessionState.READY
                 _events.tryEmit(LiveEvent.Status("ready"))
             }
             val toolCall = root.optJSONObject("toolCall")
@@ -152,6 +157,7 @@ class GeminiLiveConversationSession(
                     }
                 }
                 if (serverContent.optBoolean("turnComplete", false)) {
+                    if (liveState.canSend) liveState = LiveSessionState.TURN_COMPLETE
                     _events.tryEmit(LiveEvent.Status("turn_complete"))
                 }
             }
@@ -161,6 +167,7 @@ class GeminiLiveConversationSession(
     }
 
     override suspend fun sendUserText(text: String): Result<Unit> = runCatching {
+        if (!liveState.canSend) throw IllegalStateException("Live session is not ready ($liveState)")
         val ws = socket ?: throw IllegalStateException("Live session not connected")
         val msg = JSONObject().apply {
             put("clientContent", JSONObject().apply {
@@ -175,6 +182,7 @@ class GeminiLiveConversationSession(
     }
 
     override suspend fun sendToolResult(toolCallId: String, resultJson: String): Result<Unit> = runCatching {
+        if (!liveState.canSend) throw IllegalStateException("Live session is not ready ($liveState)")
         val ws = socket ?: throw IllegalStateException("Live session not connected")
         val responseObj = runCatching { JSONObject(resultJson) }.getOrElse { JSONObject().put("result", resultJson) }
         val msg = JSONObject().apply {
@@ -190,10 +198,11 @@ class GeminiLiveConversationSession(
     }
 
     override suspend fun stop() {
-        active.set(false)
+        if (liveState != LiveSessionState.CLOSED) liveState = LiveSessionState.CLOSING
         runCatching { socket?.close(1000, "client stop") }
         socket = null
         currentConfig = null
+        liveState = LiveSessionState.CLOSED
         _events.tryEmit(LiveEvent.Status("stopped"))
     }
 }

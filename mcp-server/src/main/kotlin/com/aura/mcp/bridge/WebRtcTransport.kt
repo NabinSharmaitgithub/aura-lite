@@ -21,6 +21,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * WebRTC DataChannel transport for LAN MCP (ported/adapted for aura-lite parity).
@@ -83,14 +84,17 @@ class WebRtcTransport(
     private inner class Peer(val auth: ConnectAuthorizer.Decision, val address: String?) {
         @Volatile var pc: PeerConnection? = null
         @Volatile var dataChannel: DataChannel? = null
-        @Volatile var approved = false
-        @Volatile var initSeen = false
+        @Volatile var phase: PeerPhase = PeerPhase.NEW
         @Volatile var challenge: PendingChallenge? = null
         @Volatile var sas: PendingSas? = null
         @Volatile var enroll: PendingEnroll? = null
         @Volatile var client: ClientRecord? = null
-        @Volatile var dead = false
+        private val closed = AtomicBoolean(false)
         val gathered = CompletableFuture<Unit>()
+
+        val approved: Boolean get() = phase.approved
+        val initSeen: Boolean get() = phase != PeerPhase.NEW && phase != PeerPhase.ANSWERED && phase != PeerPhase.DEAD
+        val dead: Boolean get() = phase == PeerPhase.DEAD
 
         fun binding(): String? {
             val phoneFp = PairingCrypto.extractFingerprint(pc?.localDescription?.description)
@@ -103,8 +107,8 @@ class WebRtcTransport(
         }
 
         fun close() {
-            if (dead) return
-            dead = true
+            phase = PeerPhase.DEAD
+            if (!closed.compareAndSet(false, true)) return
             val dc = dataChannel
             val p = pc
             onWorker {
@@ -172,6 +176,7 @@ class WebRtcTransport(
             drop(peer)
             return LanSignalingServer.Response.error(409, "no_lan", "The phone has no local-network address. Connect it to Wi-Fi and try again.")
         }
+        peer.phase = PeerPhase.ANSWERED
         return LanSignalingServer.Response(200, buildJsonObject { putJsonObject("answer") { put("type", "answer"); put("sdp", answer) } })
     }
 
@@ -280,12 +285,32 @@ class WebRtcTransport(
     }
 
     private fun handleControlMessage(peer: Peer, text: String) {
+        if (peer.dead) return
         val json = try { org.json.JSONObject(text) } catch (e: Exception) { return }
         when (json.optString("type")) {
-            "init" -> if (!peer.initSeen) { peer.initSeen = true; onInit(peer, json) }
-            "proof" -> onProof(peer, json.optString("mac"))
-            "reveal" -> onReveal(peer, json.optString("nonce"))
-            "token" -> onToken(peer, json.optString("clientToken"))
+            "init" -> guarded(peer, setOf(PeerPhase.ANSWERED), "init") {
+                peer.phase = PeerPhase.INIT_SEEN
+                onInit(peer, json)
+            }
+            "proof" -> guarded(peer, setOf(PeerPhase.CHALLENGE_SENT), "proof") {
+                onProof(peer, json.optString("mac"))
+            }
+            "reveal" -> guarded(peer, setOf(PeerPhase.SAS_SENT), "reveal") {
+                onReveal(peer, json.optString("nonce"))
+            }
+            "token" -> guarded(peer, setOf(PeerPhase.ENROLL_SENT), "token") {
+                onToken(peer, json.optString("clientToken"))
+            }
+        }
+    }
+
+    /** Runs [block] only when [peer] is in an allowed phase; out-of-order messages are logged and dropped. */
+    private fun guarded(peer: Peer, allowed: Set<PeerPhase>, message: String, block: () -> Unit) {
+        runCatching {
+            PeerTransitions.require(peer.phase, allowed, message)
+            block()
+        }.onFailure { error ->
+            Log.w(TAG, "Ignored control message: ${error.message}")
         }
     }
 
@@ -309,6 +334,7 @@ class WebRtcTransport(
         if (token != null) {
             val nonce = PairingCrypto.newNonce()
             peer.challenge = PendingChallenge(token, nonce, binding, meta)
+            peer.phase = PeerPhase.CHALLENGE_SENT
             peer.send(org.json.JSONObject().put("type", "challenge").put("nonce", nonce).toString())
             return
         }
@@ -322,6 +348,7 @@ class WebRtcTransport(
         }
         val nonce = PairingCrypto.newNonce()
         peer.sas = PendingSas(tokenHash, commit, nonce, binding, meta)
+        peer.phase = PeerPhase.SAS_SENT
         peer.send(org.json.JSONObject().put("type", "sas").put("nonce", nonce).toString())
     }
 
@@ -336,6 +363,7 @@ class WebRtcTransport(
             if (peer.dead || peer !== pending) return@invoke
             if (approved) {
                 peer.enroll = PendingEnroll(s.tokenHash, s.meta)
+                peer.phase = PeerPhase.ENROLL_SENT
                 peer.send("{\"type\":\"enroll\"}")
             } else {
                 deny(peer, s.meta, s.tokenHash.take(8), "Denied on the phone")
@@ -379,7 +407,7 @@ class WebRtcTransport(
         val tokenId = token.take(8)
         val toolsets = trustedClients.clients.value.firstOrNull { it.token == token }?.enabledToolsets ?: setOf("CORE", "ASSISTANT", "BROWSER")
         onNewClient?.invoke(ApprovedClient(tokenId, meta.name, token, toolsets))
-        peer.approved = true
+        peer.phase = PeerPhase.APPROVED
         peer.client = ClientRecord(
             tokenId = tokenId,
             meta = meta,
@@ -394,6 +422,7 @@ class WebRtcTransport(
 
     private fun deny(peer: Peer, meta: ClientMeta, tokenId: String?, reason: String) {
         auditLogger?.logConnection(ConnectionEventType.DENIED, tokenId ?: "webrtc", meta.name, meta.host, meta.platform)
+        peer.phase = PeerPhase.DEAD
         peer.challenge = null; peer.sas = null; peer.enroll = null
         peer.send(org.json.JSONObject().put("type", "denied").put("reason", reason).toString())
         onWorker(DENY_FLUSH_MS) { drop(peer) }

@@ -15,6 +15,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.aura.aura_ui.agent.AgentRunState
 import com.aura.aura_ui.agent.ConfirmationRequest
 import com.aura.aura_ui.agent.TraceLine
+import com.aura.aura_ui.agent.ledger.PlanStepStatus
 import com.aura.aura_ui.data.session.SessionOutcome
 import com.aura.aura_ui.data.session.SessionSummary
 import com.aura.aura_ui.data.session.TraceType
@@ -163,6 +168,10 @@ fun LiveRunCard(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        if (state.planSteps.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            RunTodoList(state = state, modifier = Modifier.fillMaxWidth())
+        }
         if (state.trace.isNotEmpty()) {
             Spacer(Modifier.height(14.dp))
             state.trace.takeLast(4).forEach { line ->
@@ -200,6 +209,102 @@ fun LiveRunCard(
                 )
             } else {
                 GhostButton("Dismiss", onDismiss, color = mono.textOnInkDim)
+            }
+        }
+    }
+}
+
+/**
+ * Cursor-style to-do list for the running agent: a collapsible header with done / in-progress /
+ * pending item states, fed by the run ledger plan steps.
+ */
+@Composable
+fun RunTodoList(
+    state: AgentRunState,
+    modifier: Modifier = Modifier,
+) {
+    val mono = LocalMonoScheme.current
+    val steps = state.planSteps
+    if (steps.isEmpty()) return
+    var expanded by remember { mutableStateOf(true) }
+    val doneCount = steps.count { it.status == "done" }
+    val activeStep = steps.firstOrNull { it.status == "in_progress" }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("TODO", style = MonoStyleSmall, color = mono.textSecondary)
+            Spacer(Modifier.weight(1f))
+            Text(
+                buildString {
+                    append("${steps.size} steps")
+                    if (doneCount > 0) append(" · $doneCount done")
+                    if (activeStep != null) append(" · in progress")
+                },
+                style = MonoStyleSmall,
+                color = mono.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(if (expanded) "▾" else "▸", style = MonoStyleSmall, color = mono.textSecondary)
+        }
+        if (expanded) {
+            Spacer(Modifier.height(6.dp))
+            steps.forEach { step ->
+                val stepColor = when (step.typedStatus) {
+                    PlanStepStatus.DONE -> mono.successDot
+                    PlanStepStatus.IN_PROGRESS -> mono.blood
+                    PlanStepStatus.BLOCKED -> mono.blood
+                    PlanStepStatus.SKIPPED -> mono.textSecondary
+                    PlanStepStatus.PENDING -> mono.outlineStrong
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Dot(stepColor, size = 7.dp, modifier = Modifier.padding(top = 5.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            step.description,
+                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                            color = mono.textPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (!step.note.isNullOrBlank()) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                step.note,
+                                style = MonoStyleSmall,
+                                color = mono.textSecondary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Text(
+                        when (step.typedStatus) {
+                            PlanStepStatus.DONE -> "DONE"
+                            PlanStepStatus.IN_PROGRESS -> "NOW"
+                            PlanStepStatus.BLOCKED -> "BLOCKED"
+                            PlanStepStatus.SKIPPED -> "SKIPPED"
+                            PlanStepStatus.PENDING -> "PENDING"
+                        },
+                        style = MonoStyleSmall,
+                        color = when (step.typedStatus) {
+                            PlanStepStatus.DONE -> mono.successDot
+                            PlanStepStatus.IN_PROGRESS -> mono.blood
+                            PlanStepStatus.BLOCKED -> mono.blood
+                            PlanStepStatus.SKIPPED -> mono.textSecondary
+                            PlanStepStatus.PENDING -> mono.outlineStrong
+                        },
+                    )
+                }
             }
         }
     }

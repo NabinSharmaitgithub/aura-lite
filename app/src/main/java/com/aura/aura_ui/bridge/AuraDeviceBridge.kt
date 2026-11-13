@@ -140,6 +140,7 @@ class AuraDeviceBridge @Inject constructor(
 
             // ── Apps ──────────────────────────────────────────────────────────────
             "launch_app" -> apps.launch(JsonArgs.str(args, "app_name"), JsonArgs.str(args, "package"))
+            "install_app" -> apps.install(JsonArgs.str(args, "app_name"), JsonArgs.str(args, "package"))
             "lookup_app" -> {
                 val query = JsonArgs.str(args, "query")
                     ?: return ToolResult.fail(ToolError("invalid_args", "query is required"))

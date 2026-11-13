@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import com.aura.mcp.tools.ToolStage
 
 /**
  * Uniform result envelope for every tool, in-process and over MCP.
@@ -59,6 +60,8 @@ data class ToolResult(
     val observed: JsonObject? = null,
     val error: ToolError? = null,
     val meta: JsonObject? = null,
+    /** Position in the enforcement pipeline that produced this result. */
+    val stage: ToolStage = ToolStage.DONE,
 ) {
     fun toJson(): JsonObject = buildJsonObject {
         put("ok", ok)
@@ -66,6 +69,7 @@ data class ToolResult(
         put("observed", observed ?: JsonNull)
         put("error", error?.toJson() ?: JsonNull)
         put("meta", meta ?: JsonNull)
+        put("stage", stage.wire)
     }
 
     companion object {
@@ -73,10 +77,14 @@ data class ToolResult(
             changed: Boolean = false,
             observed: JsonObject? = null,
             meta: JsonObject? = null,
-        ) = ToolResult(true, changed, observed, null, meta)
+            stage: ToolStage = ToolStage.DONE,
+        ) = ToolResult(true, changed, observed, null, meta, stage)
 
-        fun fail(error: ToolError, observed: JsonObject? = null) =
-            ToolResult(false, false, observed, error, null)
+        fun fail(
+            error: ToolError,
+            observed: JsonObject? = null,
+            stage: ToolStage = ToolStage.FAILED,
+        ) = ToolResult(false, false, observed, error, null, stage)
 
         fun permission(message: String, fix: String? = null) =
             fail(ToolError.permissionDenied(message, fix))

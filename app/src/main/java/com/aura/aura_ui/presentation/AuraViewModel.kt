@@ -17,6 +17,8 @@ import androidx.lifecycle.viewModelScope
 import com.aura.aura_ui.accessibility.AuraAccessibilityService
 import com.aura.aura_ui.accessibility.ScreenCaptureManager
 import com.aura.aura_ui.agent.AgentRuntime
+import com.aura.aura_ui.agent.control.ControlLock
+import com.aura.aura_ui.agent.report.RunEntryMode
 import com.aura.aura_ui.agent.ConfirmationBroker
 import com.aura.aura_ui.agent.llm.LlmEndpoint
 import com.aura.aura_ui.agent.llm.LlmEndpointCatalog
@@ -30,6 +32,10 @@ import com.aura.aura_ui.data.db.ReminderDao
 import com.aura.aura_ui.data.db.ReminderEntity
 import com.aura.aura_ui.data.eval.EvalCatalog
 import com.aura.aura_ui.data.eval.EvalTask
+import com.aura.aura_ui.data.eval.EvalVerdict
+import com.aura.aura_ui.data.eval.EvalVerdictRecord
+import com.aura.aura_ui.data.eval.EvalVerdictRecorder
+import com.aura.aura_ui.state.EvalRunState
 import com.aura.aura_ui.data.learnings.LearningsStore
 import com.aura.aura_ui.data.learnings.LearningFact
 import com.aura.aura_ui.data.prefs.AuraSettings
@@ -65,6 +71,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -97,6 +104,25 @@ data class ReportStats(
 )
 
 /**
+ * Snapshot for the eval debug cockpit: live run state, control-lock diagnostics, structured
+ * report and recorded verdicts, decoupled from model prose.
+ */
+data class EvalCockpit(
+    val status: String,
+    val outcome: String?,
+    val termination: String?,
+    val entryMode: String,
+    val steps: Int,
+    val goal: String,
+    val paused: Boolean,
+    val controlLockPaused: Boolean,
+    val controlLockHolding: Boolean,
+    val controlLockReason: String?,
+    val verdicts: List<EvalVerdictRecord>,
+    val reportMarkdown: String?,
+)
+
+/**
  * One shared view model for the whole shell. Screens read the same settings revision, agent
  * state and session list so a run started on Home keeps updating while the user is in Settings.
  */
@@ -125,6 +151,7 @@ class AuraViewModel @Inject constructor(
     private val b2: com.aura.aura_ui.b2.B2Service,
     private val secureKeys: SecureKeyStore,
     private val askUsers: com.aura.aura_ui.agent.AskUserBroker,
+    private val evalRecorder: EvalVerdictRecorder,
 ) : ViewModel() {
 
     val settings: StateFlow<SettingsSnapshot> = prefs.revision
@@ -145,7 +172,7 @@ class AuraViewModel @Inject constructor(
         val goal = interruptedGoal.value
         if (goal != null) {
             sessions.clearInterruption()
-            submit(goal)
+            submit(goal, RunEntryMode.RESUMED)
             return
         }
         // Fall back to an atomic run checkpoint (pause/failure/budget) when no legacy
@@ -354,6 +381,10 @@ class AuraViewModel @Inject constructor(
 
     private val evalCatalog = EvalCatalog(context)
 
+    private val _evalRun = MutableStateFlow<EvalRunState>(EvalRunState.Idle)
+    /** Explicit eval-run lifecycle for the debug cockpit. */
+    val evalRun: StateFlow<EvalRunState> = _evalRun.asStateFlow()
+
     val voiceListening = voice.listening
     val voiceSpeaking = voice.speaking
     val voiceTranscript = voice.transcript
@@ -383,7 +414,15 @@ class AuraViewModel @Inject constructor(
 
     // ── Settings ────────────────────────────────────────────────────────────────
 
-    fun updateSettings(block: (AuraSettings) -> Unit) = block(prefs)
+    fun updateSettings(block: (AuraSettings) -> Unit) {
+        val before = prefs.snapshot().ttsVoice
+        block(prefs)
+        // A saved TTS voice/engine change must take effect on the live engine immediately,
+        // not only on the next `speak()` call.
+        if (prefs.ttsVoice != before) {
+            runCatching { voice.refreshTtsVoice() }
+        }
+    }
 
     fun setOnboardingStep(step: Int) {
         prefs.onboardingStep = step
@@ -399,9 +438,9 @@ class AuraViewModel @Inject constructor(
 
     // ── Agent ────────────────────────────────────────────────────────────────────
 
-    fun submit(goal: String) {
+    fun submit(goal: String, entryMode: RunEntryMode = RunEntryMode.FRESH) {
         if (goal.isBlank()) return
-        AssistantForegroundService.submit(context, goal.trim())
+        AssistantForegroundService.submit(context, goal.trim(), entryMode)
         viewModelScope.launch {
             kotlinx.coroutines.delay(600)
             refreshSessions()
@@ -851,7 +890,68 @@ class AuraViewModel @Inject constructor(
     }
 
     fun runEvalTask(task: EvalTask) {
+        _evalRun.value = EvalRunState.Submitted(task.id, task.goal)
         submit(task.goal)
+        viewModelScope.launch {
+            val goal = task.goal.trim()
+            val started = kotlinx.coroutines.withTimeoutOrNull(20_000) {
+                runtime.state.first { it.running && it.goal == goal }
+            }
+            if (started == null) {
+                _evalRun.value = EvalRunState.Failed(task.id, "run did not start within 20s")
+                return@launch
+            }
+            _evalRun.value = EvalRunState.Running(task.id)
+            val finished = kotlinx.coroutines.withTimeoutOrNull(15 * 60_000) {
+                runtime.state.first { !it.running && it.outcome != null }
+            } ?: run {
+                _evalRun.value = EvalRunState.Failed(task.id, "run did not finish within 15m")
+                return@launch
+            }
+            val ok = finished.outcome == SessionOutcome.SUCCESS
+            val refused = finished.outcome == SessionOutcome.PERMISSION_DENIED ||
+                finished.outcome == SessionOutcome.REMOTE_BLOCKED
+            val note = task.note.orEmpty().lowercase()
+            val expectedRefusal = note.contains("blocked") || note.contains("refuse") || note.contains("denied")
+            val verdict = EvalVerdict.classify(
+                ok = ok,
+                refused = refused,
+                expectedRefusal = expectedRefusal,
+                completed = finished.outcome != null,
+            )
+            evalRecorder.append(
+                EvalVerdictRecord(
+                    taskId = task.id,
+                    verdict = verdict,
+                    steps = finished.stepCount,
+                    detail = finished.report?.termination?.wire ?: finished.outcome,
+                ),
+            )
+            _evalRun.value = EvalRunState.Finished(task.id, verdict.name, finished.stepCount)
+        }
+    }
+
+    /** Recorded eval verdicts for the debug cockpit/harness. */
+    fun evalVerdicts(): List<EvalVerdictRecord> = evalRecorder.readAll()
+
+    /** Live debug-cockpit snapshot (status, control lock, structured report, verdicts). */
+    fun evalCockpit(): EvalCockpit {
+        val state = runtime.state.value
+        val lock = ControlLock.diagnostics()
+        return EvalCockpit(
+            status = state.displayStatus,
+            outcome = state.outcome,
+            termination = state.termination?.wire ?: state.report?.termination?.wire,
+            entryMode = state.entryMode.name.lowercase(),
+            steps = state.stepCount,
+            goal = state.goal,
+            paused = state.paused,
+            controlLockPaused = lock.paused,
+            controlLockHolding = lock.holding,
+            controlLockReason = lock.lastReason,
+            verdicts = evalVerdicts(),
+            reportMarkdown = state.report?.markdown(),
+        )
     }
 
     fun showNotice(message: String) {

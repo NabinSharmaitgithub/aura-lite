@@ -5,15 +5,20 @@
   "type": "module",
   "bin": {
     "aura-mcp-connect": "./src/cli.js",
-    "aura-mcp-stdio": "./src/stdio.js"
+    "aura-mcp-stdio": "./src/stdio.js",
+    "aura-adb": "./src/adb.js"
   },
   "scripts": {
     "start": "node ./src/cli.js daemon",
     "pair": "node ./src/cli.js pair",
-    "stdio": "node ./src/stdio.js"
+    "stdio": "node ./src/stdio.js",
+    "check": "node --check ./src/cli.js && node --check ./src/daemon.js && node --check ./src/discovery.js && node --check ./src/webrtc.js && node --check ./src/webrtc-proxy.js && node --check ./src/pairing-crypto.js"
   },
   "engines": {
     "node": ">=18"
   },
-  "dependencies": {}
+  "dependencies": {},
+  "optionalDependencies": {
+    "node-datachannel": "^0.27.0"
+  }
 }

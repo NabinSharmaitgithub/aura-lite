@@ -33,6 +33,7 @@ import com.aura.aura_ui.ui.theme.MonoStyleSmall
 fun ReportScreen(vm: AuraViewModel) {
     val mono = LocalMonoScheme.current
     val stats by vm.reportStats.collectAsStateWithLifecycle()
+    val agent by vm.agent.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth().statusBarsPadding(),
@@ -92,6 +93,15 @@ fun ReportScreen(vm: AuraViewModel) {
                 KeyValueRow("Avg duration", stats.avgDurationMs.formatDuration())
                 Spacer(Modifier.height(8.dp))
                 KeyValueRow("Top provider", stats.topProvider)
+            }
+        }
+
+        agent.report?.let { report ->
+            item {
+                RunReportCard(
+                    title = "Latest run report",
+                    markdown = report.markdown(),
+                )
             }
         }
 

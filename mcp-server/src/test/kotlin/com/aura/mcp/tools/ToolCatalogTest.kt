@@ -1,5 +1,6 @@
 package com.aura.mcp.tools
 
+import com.aura.mcp.bridge.ToolDomain
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -71,6 +72,19 @@ class ToolCatalogTest {
     fun `risky tools are marked in the catalog`() {
         val risky = ToolCatalog.all.filter { it.risky }.map { it.name }
         assertTrue("expected risky tools including compose_sms, got $risky", summary(risky, "compose_sms"))
+    }
+
+    @Test
+    fun `install_app opens a play store listing for an uninstalled app`() {
+        val def = ToolCatalog.byName["install_app"]
+        assertNotNull(def)
+        assertEquals(ToolDomain.APPS, def!!.domain)
+        assertTrue(def.mutating)
+        assertTrue(def.risky)
+        val properties = def.inputSchema["properties"]?.jsonObject
+        assertNotNull(properties)
+        assertTrue(properties.containsKey("app_name"))
+        assertTrue(properties.containsKey("package"))
     }
 
     private fun summary(list: List<String>, needle: String): Boolean = needle in list

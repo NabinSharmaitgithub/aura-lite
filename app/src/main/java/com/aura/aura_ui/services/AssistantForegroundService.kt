@@ -6,7 +6,9 @@ import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.ServiceCompat
 import com.aura.aura_ui.agent.AgentRuntime
+import com.aura.aura_ui.agent.report.RunEntryMode
 import com.aura.aura_ui.notifications.AuraNotifications
+import com.aura.aura_ui.state.ForegroundServiceState
 import com.aura.aura_ui.voice.VoiceEngine
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -15,6 +17,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import android.app.NotificationManager
@@ -33,20 +38,29 @@ class AssistantForegroundService : Service() {
     private var collectJob: Job? = null
     private var listenJob: Job? = null
 
+    private val _state = MutableStateFlow(ForegroundServiceState.CREATED)
+    /** Explicit foreground-service lifecycle. */
+    val state: StateFlow<ForegroundServiceState> = _state.asStateFlow()
+
     override fun onCreate() {
         super.onCreate()
         AuraNotifications.ensureChannels(this)
+        _state.value = ForegroundServiceState.CREATED
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        _state.value = ForegroundServiceState.RUNNING
         startForeground(AuraNotifications.ID_RUN, AuraNotifications.runNotification(this, runtime.state.value))
         when (intent?.action) {
-            ACTION_LISTEN -> beginListening()
+            ACTION_LISTEN -> { _state.value = ForegroundServiceState.LISTENING; beginListening() }
             ACTION_PAUSE -> runtime.pause()
             ACTION_RESUME -> runtime.resume()
             ACTION_STOP -> runtime.stop()
             else -> intent?.getStringExtra(EXTRA_GOAL)?.takeIf { it.isNotBlank() }?.let { goal ->
-                runtime.submit(goal)
+                val entryMode = intent?.getStringExtra(EXTRA_ENTRY_MODE)
+                    ?.let { runCatching { RunEntryMode.valueOf(it) }.getOrNull() }
+                    ?: RunEntryMode.FRESH
+                runtime.submit(goal, entryMode = entryMode)
             }
         }
         observeRuntime()
@@ -112,6 +126,7 @@ class AssistantForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        _state.value = ForegroundServiceState.STOPPED
         collectJob?.cancel()
         listenJob?.cancel()
         super.onDestroy()
@@ -125,10 +140,13 @@ class AssistantForegroundService : Service() {
         const val ACTION_RESUME = "com.aura.ACTION_RESUME"
         const val ACTION_STOP = "com.aura.ACTION_STOP"
         const val EXTRA_GOAL = "goal"
+        const val EXTRA_ENTRY_MODE = "entry_mode"
 
-        fun submit(context: Context, goal: String) {
+        fun submit(context: Context, goal: String, entryMode: RunEntryMode = RunEntryMode.FRESH) {
             context.startForegroundService(
-                Intent(context, AssistantForegroundService::class.java).putExtra(EXTRA_GOAL, goal),
+                Intent(context, AssistantForegroundService::class.java)
+                    .putExtra(EXTRA_GOAL, goal)
+                    .putExtra(EXTRA_ENTRY_MODE, entryMode.name),
             )
         }
 

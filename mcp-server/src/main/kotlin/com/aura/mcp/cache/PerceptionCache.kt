@@ -1,5 +1,6 @@
 package com.aura.mcp.cache
 
+import com.aura.mcp.cache.ScreenFreshness
 import kotlinx.serialization.json.JsonObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -48,4 +49,11 @@ class PerceptionCache {
     fun get(somId: Int): Element? = elements[somId]
     fun snapshot(): Map<Int, Element> = elements.toMap()
     fun size(): Int = elements.size
+
+    /** How fresh the cached screen is relative to an expected generation. */
+    fun freshness(expectedGeneration: Long): ScreenFreshness = when {
+        elements.isEmpty() -> ScreenFreshness.EMPTY
+        generation() == expectedGeneration -> ScreenFreshness.FRESH
+        else -> ScreenFreshness.STALE
+    }
 }

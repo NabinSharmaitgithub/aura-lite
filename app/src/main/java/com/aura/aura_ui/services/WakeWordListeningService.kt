@@ -13,6 +13,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.aura.aura_ui.data.prefs.AuraSettings
 import com.aura.aura_ui.notifications.AuraNotifications
+import com.aura.aura_ui.state.WakeWordState
 import com.aura.aura_ui.voice.VadGate
 import com.aura.aura_ui.voice.WakeWordEngine
 import dagger.hilt.android.AndroidEntryPoint
@@ -37,8 +38,12 @@ class WakeWordListeningService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
     @Volatile private var engine: WakeWordEngine? = null
-    @Volatile private var recording = false
-    @Volatile private var pausedForRun = false
+    @Volatile private var wakeState: WakeWordState = WakeWordState.STOPPED
+
+    private fun setWakeState(state: WakeWordState) {
+        wakeState = state
+        currentState = state
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -61,10 +66,12 @@ class WakeWordListeningService : Service() {
 
     private fun startDetection() {
         if (job?.isActive == true) return
+        setWakeState(WakeWordState.STARTING)
         job = scope.launch {
             val loaded = WakeWordEngine.create(this@WakeWordListeningService)
             if (loaded == null) {
                 // Model not bundled: never leave a microphone service running silently.
+                setWakeState(WakeWordState.STOPPING)
                 delay(800)
                 stopSelfSafely()
                 return@launch
@@ -92,8 +99,8 @@ class WakeWordListeningService : Service() {
             val floats = FloatArray(1600)
             try {
                 record.startRecording()
-                recording = true
-                while (isActive && !pausedForRun) {
+                setWakeState(WakeWordState.DETECTING)
+                while (isActive && wakeState == WakeWordState.DETECTING) {
                     val read = record.read(buffer, 0, buffer.size)
                     if (read <= 0) continue
                     // Feed every frame: keyword spotting needs continuous context, VAD only trims work.
@@ -101,21 +108,22 @@ class WakeWordListeningService : Service() {
                     val samples = if (read == floats.size) floats else floats.copyOf(read)
                     val hit = engine?.accept(samples, sampleRate) == true
                     if (hit) {
-                        pausedForRun = true
+                        setWakeState(WakeWordState.PAUSED_FOR_RUN)
                         AssistantForegroundService.listen(this@WakeWordListeningService)
                         break
                     }
                 }
             } finally {
-                recording = false
                 runCatching { record.stop() }
                 runCatching { record.release() }
             }
             // Give the voice run time to take the microphone, then resume detection.
-            if (pausedForRun) {
+            if (wakeState == WakeWordState.PAUSED_FOR_RUN) {
                 delay(25_000)
-                pausedForRun = false
+                setWakeState(WakeWordState.DETECTING)
                 if (settings.wakeWordEnabled) startDetection()
+            } else {
+                setWakeState(WakeWordState.STOPPED)
             }
         }
     }
@@ -126,6 +134,7 @@ class WakeWordListeningService : Service() {
     }
 
     override fun onDestroy() {
+        setWakeState(WakeWordState.STOPPED)
         job?.cancel()
         engine?.release()
         engine = null
@@ -135,6 +144,9 @@ class WakeWordListeningService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        @Volatile var currentState: WakeWordState = WakeWordState.STOPPED
+            private set
+
         fun start(context: Context) {
             context.startForegroundService(Intent(context, WakeWordListeningService::class.java))
         }

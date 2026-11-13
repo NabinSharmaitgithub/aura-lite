@@ -10,8 +10,20 @@ All notable changes to AURA Lite are documented here. Format follows [Keep a Cha
   with the reason instead of silently exiting. `AssistantForegroundService` also uses the
   `microphone` foreground type, and the Home `AURA_LISTEN` entry gives the user feedback when
   speech recognition is unavailable on the device.
+- Voice: a saved TTS voice/engine setting is now re-applied to the live speech engine
+  (`VoiceEngine.refreshTtsVoice`) instead of only taking effect on the next speak call, so
+  changing the voice or TTS model from Settings → Voice takes effect immediately.
 
 ### Added
+- `install_app` tool (apps domain, mutating + risky): opens the Google Play Store listing for an
+  app that is not installed yet (`https://play.google.com/store/apps/details?id=<package>`), so the
+  agent can complete goals like "open the Play Store and install Free Fire" (Play Store listing →
+  user taps Install). Free Fire / Free Fire Max aliases and Play Store deep links added to
+  `AppResolver` and `deeplink_catalog.json`.
+- `install_app` added to the CORE toolset scope and to the MCP tool guide/instructions so install
+  goals are planned with the right tool.
+- `browser_open` search guidance for in-app music/video searches (YouTube results URL) in the MCP
+  tool guide.
 - `ask_user` tool: the agent can pause the run, ask the user a question in-app or via notification,
   and resume with the answer. Available to the in-app agent and MCP clients.
 - MCP `prompts/` and `resources/` for the LAN HTTPS bridge and the in-process client:
@@ -38,3 +50,19 @@ All notable changes to AURA Lite are documented here. Format follows [Keep a Cha
 ### Compliance
 - AGPL-3.0 licensed. Source offered publicly. Linking exception covers Google Play services, Firebase,
   and ML Kit only.
+
+### Sixth pass — explicit state machines
+- Replaced ~40 implicit state machines (scattered booleans, counters, free-form status strings and
+  independent nullable flags) with explicit, guarded state types and transition functions.
+- `AgentRunState` is now phase-first (`RunPhase`); `running`/`paused`/`status` derived, transitions
+  validated by `RunTransitions`.
+- `ControlLock`, `ConfirmationBroker`, `AskUserBroker`, `WakeWordListeningService`,
+  `ScreenCaptureManager`, `BrowserController`, `RemoteGate`, `PinGate`, `McpServerController`,
+  `WebRtcTransport` peers, `McpToolRegistry` (tool stage per result), `StatusNarrator`,
+  `ActiveRunRegistry`, `SessionWriter`, `FirebaseSync`, `B2Service`, `InstallFlow`, `VoiceEngine`,
+  `GeminiLiveConversationSession`, `AuraViewModel.evalRun`, `OnboardingScreen`, overlay pill and
+  foreground/projection services all carry explicit canonical state.
+- `PlanStepStatus`, `McpServerState`, `PeerPhase`, `PinGateState`, `ToolStage` and `ScreenFreshness`
+  enums added; `ToolResult` now records the producing pipeline stage.
+- `docs/MISSING_FEATURES_IMPLEMENTED.md` updated with a sixth-pass section.
+

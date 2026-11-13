@@ -9,7 +9,8 @@ import javax.inject.Singleton
  * Remote gate: kill switch / minimum version / update prompts / blocklist / suspension.
  *
  * Enforcement is cached and offline-safe: when remote config is unavailable, the last known
- * state is used. A local override exists for tests and developer builds.
+ * state is used. The old state carried five partially-overlapping booleans; [GateStatus] is now
+ * the single source of truth and the booleans are derived.
  */
 @Singleton
 class RemoteGate @Inject constructor(
@@ -17,16 +18,32 @@ class RemoteGate @Inject constructor(
     private val remoteConfig: FirebaseRemoteConfigManager,
 ) {
 
+    enum class GateStatus {
+        UNKNOWN,
+        OK,
+        UPDATE_RECOMMENDED,
+        UPDATE_REQUIRED,
+        SUSPENDED,
+        BLOCKLISTED,
+        KILL_SWITCH,
+    }
+
     data class GateState(
-        val blocked: Boolean = false,
+        val status: GateStatus = GateStatus.UNKNOWN,
         val reason: String? = null,
-        val updateRecommended: Boolean = false,
-        val updateRequired: Boolean = false,
         val message: String? = null,
         val minVersionCode: Int = 0,
-        val suspended: Boolean = false,
-        val blocklisted: Boolean = false,
-    )
+    ) {
+        val blocked: Boolean
+            get() = status == GateStatus.SUSPENDED ||
+                status == GateStatus.BLOCKLISTED ||
+                status == GateStatus.KILL_SWITCH
+        val suspended: Boolean get() = status == GateStatus.SUSPENDED
+        val blocklisted: Boolean get() = status == GateStatus.BLOCKLISTED
+        val updateRequired: Boolean get() = status == GateStatus.UPDATE_REQUIRED
+        val updateRecommended: Boolean
+            get() = status == GateStatus.UPDATE_RECOMMENDED || status == GateStatus.UPDATE_REQUIRED
+    }
 
     @Volatile private var cached: GateState = GateState()
     @Volatile private var lastRefreshAt: Long = 0L
@@ -49,23 +66,24 @@ class RemoteGate @Inject constructor(
             val blocklisted = runCatching { remoteConfig.blocklisted() }.getOrDefault(false)
             val minVersion = runCatching { remoteConfig.minSupportedVersionCode() }.getOrDefault(0L).toInt()
             val currentVersion = runCatching { com.aura.aura_ui.BuildConfig.VERSION_CODE }.getOrDefault(0)
-            val updateRequired = minVersion > 0 && currentVersion < minVersion
-            val blocked = killed || suspended || blocklisted
-            val reason = when {
-                killed -> "Remotely disabled by the maintainers"
-                suspended -> "This installation has been remotely suspended"
-                blocklisted -> "This installation is blocked from using AURA services"
+            val status = when {
+                killed -> GateStatus.KILL_SWITCH
+                suspended -> GateStatus.SUSPENDED
+                blocklisted -> GateStatus.BLOCKLISTED
+                minVersion > 0 && currentVersion < minVersion -> GateStatus.UPDATE_REQUIRED
+                else -> GateStatus.OK
+            }
+            val reason = when (status) {
+                GateStatus.KILL_SWITCH -> "Remotely disabled by the maintainers"
+                GateStatus.SUSPENDED -> "This installation has been remotely suspended"
+                GateStatus.BLOCKLISTED -> "This installation is blocked from using AURA services"
                 else -> cached.reason
             }
             cached = GateState(
-                blocked = blocked,
+                status = status,
                 reason = reason,
-                updateRecommended = updateRequired,
-                updateRequired = updateRequired,
-                message = if (updateRequired) "Please update AURA to continue." else cached.message,
+                message = if (status == GateStatus.UPDATE_REQUIRED) "Please update AURA to continue." else cached.message,
                 minVersionCode = minVersion,
-                suspended = suspended,
-                blocklisted = blocklisted,
             )
             lastRefreshAt = System.currentTimeMillis()
         }
@@ -78,12 +96,14 @@ class RemoteGate @Inject constructor(
         suspended: Boolean = false,
         blocklisted: Boolean = false,
     ) {
-        cached = cached.copy(
-            blocked = blocked,
-            reason = reason,
-            suspended = suspended,
-            blocklisted = blocklisted,
-        )
+        val status = when {
+            blocklisted -> GateStatus.BLOCKLISTED
+            suspended -> GateStatus.SUSPENDED
+            blocked -> GateStatus.KILL_SWITCH
+            cached.updateRequired -> GateStatus.UPDATE_REQUIRED
+            else -> GateStatus.OK
+        }
+        cached = cached.copy(status = status, reason = reason)
     }
 
     fun ensureFresh(maxAgeMs: Long = 6 * 60 * 60 * 1000L) {

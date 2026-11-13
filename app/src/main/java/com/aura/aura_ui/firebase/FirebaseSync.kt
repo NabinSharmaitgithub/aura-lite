@@ -1,6 +1,7 @@
 package com.aura.aura_ui.firebase
 
 import android.content.Context
+import com.aura.aura_ui.state.SyncState
 import com.aura.aura_ui.data.db.ReminderDao
 import com.aura.aura_ui.data.db.SkillDao
 import com.aura.aura_ui.data.db.ReminderEntity
@@ -50,6 +51,7 @@ class FirebaseSync @Inject constructor(
         val errors: List<String>,
         val detail: String,
         val ok: Boolean,
+        val state: SyncState = SyncState.IDLE,
     )
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
@@ -57,15 +59,15 @@ class FirebaseSync @Inject constructor(
     suspend fun syncNow(): Report {
         val unsynced = listOf("facts", "plans", "skills", "sessions")
         if (!FirebaseOptional.available(context)) {
-            return Report(emptyList(), emptyList(), unsynced, emptyList(), "Firebase is not configured on this build", ok = false)
+            return Report(emptyList(), emptyList(), unsynced, emptyList(), "Firebase is not configured on this build", ok = false, state = SyncState.UNAVAILABLE)
         }
         if (!prefs.firebaseEnabled) {
-            return Report(emptyList(), emptyList(), unsynced, emptyList(), "Link a Firebase account first", ok = false)
+            return Report(emptyList(), emptyList(), unsynced, emptyList(), "Link a Firebase account first", ok = false, state = SyncState.NOT_CONFIGURED)
         }
         val db = runCatching { FirebaseFirestore.getInstance() }.getOrNull()
-            ?: return Report(emptyList(), emptyList(), unsynced, emptyList(), "Firestore unavailable", ok = false)
+            ?: return Report(emptyList(), emptyList(), unsynced, emptyList(), "Firestore unavailable", ok = false, state = SyncState.ERROR)
         val user = runCatching { FirebaseAuth.getInstance().currentUser }.getOrNull()
-            ?: return Report(emptyList(), emptyList(), unsynced, emptyList(), "Sign in to sync", ok = false)
+            ?: return Report(emptyList(), emptyList(), unsynced, emptyList(), "Sign in to sync", ok = false, state = SyncState.UNAUTHENTICATED)
 
         val pushed = mutableListOf<String>()
         val pulled = mutableListOf<String>()
@@ -105,7 +107,12 @@ class FirebaseSync @Inject constructor(
             if (skipped.isNotEmpty()) append("Skipped " + skipped.joinToString(", ") + ".")
             if (errors.isNotEmpty()) append(" Failed: " + errors.joinToString(", ") + ".")
         }.ifBlank { "Nothing to sync" }
-        return Report(pushed, pulled, skipped, errors, detail, ok = errors.isEmpty())
+        val state = when {
+            errors.isEmpty() -> SyncState.OK
+            pushed.isNotEmpty() || pulled.isNotEmpty() -> SyncState.PARTIAL
+            else -> SyncState.ERROR
+        }
+        return Report(pushed, pulled, skipped, errors, detail, ok = errors.isEmpty(), state = state)
     }
 
 

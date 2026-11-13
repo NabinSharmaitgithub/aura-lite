@@ -1,5 +1,7 @@
 package com.aura.aura_ui.automation
 
+import com.aura.aura_ui.state.InstallState
+
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -36,6 +38,9 @@ class AppResolver @Inject constructor(@ApplicationContext private val context: C
         "chrome" to listOf("com.android.chrome"),
         "maps" to listOf("com.google.android.apps.maps"),
         "youtube" to listOf("com.google.android.youtube"),
+        "free fire" to listOf("com.garena.game.freefire"),
+        "freefire" to listOf("com.garena.game.freefire"),
+        "free fire max" to listOf("com.garena.game.freefiremax"),
     )
 
     fun installedApps(): List<AppEntry> {
@@ -139,6 +144,53 @@ class AppResolver @Inject constructor(@ApplicationContext private val context: C
                 },
             )
         }.getOrElse { ToolResult.fail(ToolError.internal(it.message ?: "Launch failed")) }
+    }
+
+    /** Google Play Store listing URI for a package (the install entry point for not-yet-installed apps). */
+    fun playStoreListingUri(packageName: String): String = "https://play.google.com/store/apps/details?id=$packageName"
+
+    fun install(appName: String?, packageName: String?): ToolResult {
+        InstallFlow.update(InstallState.RESOLVING)
+        val requested = packageName?.takeIf { it.isNotBlank() } ?: appName?.takeIf { it.isNotBlank() }
+            ?: return ToolResult.fail(ToolError.notFound("app_name or package is required to install an app"))
+                .also { InstallFlow.update(InstallState.FAILED) }
+        val target = resolveInstallPackage(requested)
+            ?: return ToolResult.fail(ToolError.notFound("Could not resolve \"$requested\" to an Android package for install"))
+                .also { InstallFlow.update(InstallState.UNRESOLVED) }
+        val uri = playStoreListingUri(target)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val resolved = context.packageManager.resolveActivity(intent, 0)
+            ?: return ToolResult.fail(ToolError.notFound("No app can open the Play Store listing for $target"))
+                .also { InstallFlow.update(InstallState.FAILED) }
+        return runCatching {
+            context.startActivity(intent)
+            InstallFlow.update(InstallState.LISTING_OPENED)
+            ToolResult.ok(
+                changed = true,
+                observed = buildJsonObject {
+                    put("package", target)
+                    put("uri", uri)
+                    put(
+                        "label",
+                        runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(target, 0)).toString() }.getOrDefault(target),
+                    )
+                    put("note", "Opened the Google Play Store listing; the install action itself happens in the Play Store UI (tap Install) and the user must confirm it.")
+                },
+            )
+        }.getOrElse {
+            InstallFlow.update(InstallState.FAILED)
+            ToolResult.fail(ToolError.internal(it.message ?: "Could not open the Play Store listing"))
+        }
+    }
+
+    /** Resolve an install target: exact package, known alias hit, or the raw query as a package id. */
+    private fun resolveInstallPackage(requested: String): String? {
+        val q = requested.trim().lowercase()
+        val aliasHit = knownPackageAliases.entries.firstOrNull { (key, _) -> q == key || q.contains(key) || key.contains(q) }?.value.orEmpty()
+        val candidates = (aliasHit.ifEmpty { listOf(q) } + listOf(q)).distinct()
+        return candidates.firstOrNull { it.contains('.') && it.isNotBlank() }
     }
 
     fun lookupResult(query: String): ToolResult {

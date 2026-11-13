@@ -88,6 +88,45 @@ fun EvalSuiteScreen(vm: AuraViewModel) {
                 Text("REFUSED: blocked by policy/permission/approval (correct for adversarial tasks).", style = MonoStyleSmall, color = mono.textSecondary)
                 Text("INVALID: run not completed or result inconclusive.", style = MonoStyleSmall, color = mono.textSecondary)
             }
+            Spacer(Modifier.height(12.dp))
+            val cockpit = vm.evalCockpit()
+            SurfaceCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Debug cockpit", style = androidx.compose.material3.MaterialTheme.typography.titleMedium, color = mono.textPrimary, modifier = Modifier.weight(1f))
+                    Badge(cockpit.status, tone = if (cockpit.status == "done") ChipTone.Live else ChipTone.Idle)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "entry=${cockpit.entryMode} · steps=${cockpit.steps} · termination=${cockpit.termination ?: "—"}",
+                    style = MonoStyleSmall,
+                    color = mono.textSecondary,
+                )
+                if (cockpit.goal.isNotBlank()) {
+                    Text("goal: ${cockpit.goal.take(120)}", style = MonoStyleSmall, color = mono.textSecondary)
+                }
+                Text(
+                    "control lock: paused=${cockpit.controlLockPaused} holding=${cockpit.controlLockHolding}" +
+                        (cockpit.controlLockReason?.let { " · $it" } ?: ""),
+                    style = MonoStyleSmall,
+                    color = mono.textSecondary,
+                )
+                if (cockpit.verdicts.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Recorded verdicts (${cockpit.verdicts.size})", style = MonoStyleSmall, color = mono.textPrimary)
+                    cockpit.verdicts.takeLast(5).forEach { record ->
+                        Text(
+                            "${record.taskId}: ${record.verdict.name.lowercase()} · ${record.steps} steps" +
+                                (record.detail?.let { " · $it" } ?: ""),
+                            style = MonoStyleSmall,
+                            color = mono.textSecondary,
+                        )
+                    }
+                }
+                if (!cockpit.reportMarkdown.isNullOrBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Structured report is available in Activity → session → report.", style = MonoStyleSmall, color = mono.textSecondary)
+                }
+            }
             Spacer(Modifier.height(20.dp))
         }
 

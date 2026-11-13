@@ -231,3 +231,46 @@ Added and handled by `AgentRuntime`:
 - **Full WebRTC desktop↔phone transport**: complete data-channel MCP proxy, production mDNS/Bonjour integration, and end-to-end SAS/reconnect UX require phone protocol alignment, WebRTC libraries, and device/network validation.
 - **Eval harness execution/cockpit**: verdict recording hooks can be wired deeper into automated run capture; full debug cockpit UI/reporting needs on-device validation.
 - **On-device validation**: **no Gradle build or runtime/device tests executed** (Android SDK unavailable here). Compile/runtime correctness of modified app + mcp-server modules must be verified with `:mcp-server:test` and `:app:assembleDebug` (and device smoke tests).
+
+---
+
+## Sixth implementation pass (explicit state machines for implicit FSMs)
+
+This pass replaces ~40 implicit state machines (scattered booleans, counters, free-form status strings, and independent nullable flags) with explicit, guarded state types and transition functions, so illegal states can no longer be represented silently.
+
+### New state-type modules
+- `app/src/main/java/com/aura/aura_ui/state/RunStates.kt` — `RunPhase` (single source of truth for `AgentRunState`; `running`/`paused`/`status` derived), `RunEvent` + `RunTransitions` (legal-transition table), `ApprovalState` (visible request + FIFO queue, never overwrites), `AskUserState`, `ControlLockState` (pause/hold/unlocked/both), `NarrationState`.
+- `app/src/main/java/com/aura/aura_ui/state/DeviceStates.kt` — `VoiceSessionState`, `TtsState`, `WakeWordState`, `PillState`, `CaptureState` (consent token + granted/capturing/released), `BrowserState` (detached/attached/loading/loaded/handoff/destroyed), `AccessibilityState`, `KeyboardLeaseState` (real refcount), `ScreenFreshness`, `InstallState`, `ForegroundServiceState`, `ProjectionServiceState`.
+- `app/src/main/java/com/aura/aura_ui/state/NetworkStates.kt` — `SyncState`, `EvalRunState` (submitted/running/finished/failed), `LiveSessionState` (closed/connecting/connected/ready/turn-complete/closing/failed), `BackupState`, `SessionLifecycle`, `CheckpointAvailability`, `OnboardingStep`, `RunHandleState`.
+- `app/src/main/java/com/aura/aura_ui/agent/ledger/RunLedger.kt` — `PlanStepStatus` enum (typed wire value) replacing the free-form `status` string; `updateStep` is now typed.
+- `mcp-server/src/main/kotlin/com/aura/mcp/McpServerState.kt` — `McpServerState` enum (stopped/starting/running_http/running_webrtc/running_both/stopping/error) with `McpServerTransitions` guard table.
+- `mcp-server/src/main/kotlin/com/aura/mcp/bridge/PeerPhase.kt` — `PeerPhase` enum (new/answered/init_seen/challenge_sent/sas_sent/enroll_sent/approved/dead) with `PeerTransitions.require` guards; out-of-order control messages are dropped instead of processed.
+- `mcp-server/src/main/kotlin/com/aura/mcp/lan/PinGateState.kt` — `PinGateState` sealed (`Active(failures, level)` / `Locked(until, level)`); lockout always carries a deadline and preserves escalation level across expiry.
+- `mcp-server/src/main/kotlin/com/aura/mcp/tools/ToolStage.kt` — `ToolStage` enum (received/scope_checked/paused/policy_blocked/foreground_blocked/approval_pending/approval_denied/otp_blocked/guard_blocked/executing/settling/done/failed); every `ToolResult` now carries the producing stage.
+- `mcp-server/src/main/kotlin/com/aura/mcp/cache/ScreenFreshness.kt` — shared `ScreenFreshness` enum; `LastSeenScreen` and `PerceptionCache` expose `freshness(expectedGeneration)`.
+
+### Key integrations
+- `AgentRunState` is now phase-first; `pause()`/`resume()`/start/terminate go through `RunTransitions.next`, and illegal transitions are caught/logged instead of silently applied.
+- `ControlLock` moved from two independent `AtomicBoolean`s to a single atomic `ControlLockState` (derived paused/holding/canAutomateMutations).
+- `ConfirmationBroker` queues requests instead of overwriting; exposes `state: StateFlow<ApprovalState>`.
+- `AskUserBroker` tracks `AskUserState` (open/answered/dismissed/timed-out/idle).
+- `WakeWordListeningService` replaced `recording`/`pausedForRun` booleans with `WakeWordState` plus a companion `currentState`.
+- `ScreenCaptureManager` replaced the consent counter with `CaptureState` (request token → granted → capturing → released).
+- `BrowserController` tracks `BrowserState` and refuses concurrent navigations.
+- `RemoteGate` uses a single `GateStatus` enum; `updateRecommended`/`updateRequired` are now distinct.
+- `PinGate` state is now the sealed `PinGateState`; failures/lockout/level are no longer independent fields.
+- `McpServerController` tracks `serverState` via `McpServerTransitions`-consistent guards and rejects double-starts.
+- `WebRtcTransport` peers are phase-guarded (init/proof/reveal/token only in the phases that own them).
+- `McpToolRegistry` records `ToolStage` on every gate and in every `ToolResult`.
+- `PerceptionTiering.decideAndRecord` persists `currentTier`.
+- `StatusNarrator` is now `NarrationState`-driven with a derived string stream.
+- `ActiveRunRegistry.RunHandle.state` is canonical; `finish()` nulls `currentRunId`.
+- `SessionWriter.end()` is idempotent via `SessionLifecycle`.
+- `FirebaseSync.Report.state`, `B2Service.backupState`, `InstallFlow.state`, `VoiceEngine.session`/`ttsState`, `GeminiLiveConversationSession.state`, `AuraViewModel.evalRun` added.
+- `OnboardingScreen` driven by `OnboardingStep` instead of bare integers.
+- Overlay pill uses `PillState`; `StatusStrip`/report surfaces derive from run phase.
+
+### Remaining gaps
+- On-device Gradle build/runtime/device tests not executed locally (no Android SDK); compile correctness must be verified via CI (`:mcp-server:test`, `:app:assembleDebug`).
+- `FEATURES.md` and this file describe the intended state; individual screens can adopt the new state flows progressively.
+

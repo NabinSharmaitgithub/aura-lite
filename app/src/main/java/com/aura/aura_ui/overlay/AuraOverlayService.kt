@@ -10,6 +10,7 @@ import android.view.Gravity
 import android.view.WindowManager
 import androidx.core.app.ServiceCompat
 import com.aura.aura_ui.notifications.AuraNotifications
+import com.aura.aura_ui.state.PillState
 import com.aura.aura_ui.services.AssistantForegroundService
 import com.aura.aura_ui.voice.VoiceEngine
 import dagger.hilt.android.AndroidEntryPoint
@@ -56,7 +57,7 @@ class AuraOverlayService : Service() {
         pill.onTap = {
             if (voice.listening.value) {
                 voice.cancelListening()
-                pill.update(false, voice.speaking.value, "Tap to talk", "")
+                pill.update(pillState(), "Tap to talk", "")
             } else {
                 AssistantForegroundService.listen(this)
             }
@@ -78,16 +79,21 @@ class AuraOverlayService : Service() {
         view = pill
     }
 
+    private fun pillState(): PillState = when {
+        voice.listening.value -> PillState.LISTENING
+        voice.speaking.value -> PillState.SPEAKING
+        else -> PillState.IDLE
+    }
+
     private fun observeVoice() {
         scope.launch {
             voice.transcript.collect { transcript ->
                 view?.update(
-                    listening = voice.listening.value,
-                    speaking = voice.speaking.value,
-                    status = when {
-                        voice.listening.value -> "Listening…"
-                        voice.speaking.value -> "Speaking…"
-                        else -> "Tap to talk"
+                    state = pillState(),
+                    status = when (pillState()) {
+                        PillState.LISTENING -> "Listening…"
+                        PillState.SPEAKING -> "Speaking…"
+                        PillState.IDLE -> "Tap to talk"
                     },
                     transcript = transcript,
                 )
@@ -96,8 +102,7 @@ class AuraOverlayService : Service() {
         scope.launch {
             voice.listening.collect { listening ->
                 view?.update(
-                    listening = listening,
-                    speaking = voice.speaking.value,
+                    state = pillState(),
                     status = if (listening) "Listening…" else "Tap to talk",
                     transcript = voice.transcript.value,
                 )
@@ -106,8 +111,7 @@ class AuraOverlayService : Service() {
         scope.launch {
             voice.speaking.collect { speaking ->
                 view?.update(
-                    listening = voice.listening.value,
-                    speaking = speaking,
+                    state = pillState(),
                     status = if (speaking) "Speaking…" else "Tap to talk",
                     transcript = voice.transcript.value,
                 )

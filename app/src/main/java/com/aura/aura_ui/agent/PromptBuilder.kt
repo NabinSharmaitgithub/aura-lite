@@ -25,11 +25,25 @@ class PromptBuilder(
         screenshotCapable: Boolean,
         ledgerBlock: String? = null,
         budgetNote: String? = null,
+        routeHintBlock: String? = null,
     ): String {
         val override = settings.systemPromptOverride.trim()
         if (override.isNotEmpty()) {
-            val hooks = settings.hookInstructions.trim()
-            return if (hooks.isEmpty()) override else "$override\n\n## Run hooks\n$hooks"
+            return buildString {
+                append(override)
+                if (!routeHintBlock.isNullOrBlank()) {
+                    appendLine()
+                    appendLine()
+                    appendLine("## Learned route hints")
+                    appendLine(routeHintBlock.trim())
+                }
+                val hooks = settings.hookInstructions.trim()
+                if (hooks.isNotEmpty()) {
+                    appendLine()
+                    appendLine("## Run hooks")
+                    appendLine(hooks)
+                }
+            }
         }
         return buildString {
             appendLine("You are AURA, an on-device agent that operates an Android phone for its user.")
@@ -80,6 +94,11 @@ class PromptBuilder(
             if (recentFailures.isNotEmpty()) {
                 appendLine("## Recent failures (do not repeat)")
                 recentFailures.take(4).forEach { appendLine("- $it") }
+                appendLine()
+            }
+            if (!routeHintBlock.isNullOrBlank()) {
+                appendLine("## Learned route hints")
+                appendLine(routeHintBlock.trim())
                 appendLine()
             }
             if (!ledgerBlock.isNullOrBlank()) {

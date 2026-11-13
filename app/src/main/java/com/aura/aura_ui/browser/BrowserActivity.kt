@@ -14,6 +14,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.TextView
+import com.aura.aura_ui.state.BrowserState
 import com.aura.aura_ui.ui.theme.MonoArgb
 import java.io.File
 import java.io.FileOutputStream
@@ -105,21 +106,30 @@ object BrowserController {
     @Volatile private var currentUrl: String = ""
     @Volatile private var generation: Long = 0
     @Volatile private var handoffActive: Boolean = false
+    @Volatile private var browserState: BrowserState = BrowserState.DETACHED
+    @Volatile private var opening: Boolean = false
     private val elementHandles = linkedMapOf<String, String>() // el_id -> selector-ish hint
 
     fun generation(): Long = generation
     fun isHandoffActive(): Boolean = handoffActive
-    fun clearHandoff() { handoffActive = false }
+    fun state(): BrowserState = browserState
+    fun isAttached(): Boolean = browserState != BrowserState.DETACHED && browserState != BrowserState.DESTROYED
+    fun clearHandoff() {
+        handoffActive = false
+        browserState = if (activityRef?.get() != null) BrowserState.ATTACHED else BrowserState.DETACHED
+    }
 
     fun attach(activity: BrowserActivity, webView: WebView) {
         activityRef = WeakReference(activity)
         webViewRef = WeakReference(webView)
+        browserState = BrowserState.ATTACHED
     }
 
     fun detach(activity: BrowserActivity) {
         if (activityRef?.get() === activity) {
             activityRef = null
             webViewRef = null
+            browserState = BrowserState.DETACHED
         }
     }
 
@@ -128,31 +138,42 @@ object BrowserController {
         generation += 1
         elementHandles.clear()
         if (webView != null) webViewRef = WeakReference(webView)
-        pageWaiter?.invoke(title)
+        browserState = if (handoffActive) BrowserState.HANDOFF else BrowserState.LOADED
+        val waiter = pageWaiter
         pageWaiter = null
+        waiter?.invoke(title)
     }
 
     suspend fun open(context: android.content.Context, url: String): Result<String> = withContext(Dispatchers.Main) {
-        runCatching {
-            val activity = activityRef?.get()
-            if (activity != null && !activity.isFinishing) {
+        if (opening) {
+            return@withContext Result.failure(IllegalStateException("Another browser navigation is already in progress"))
+        }
+        opening = true
+        try {
+            runCatching {
+                val activity = activityRef?.get()
+                if (activity != null && !activity.isFinishing) {
+                    browserState = BrowserState.LOADING
+                    val loaded = suspendCancellableCoroutine<String?> { cont ->
+                        pageWaiter = { title -> if (cont.isActive) cont.resume(title) }
+                        activity.webView.loadUrl(url)
+                        cont.invokeOnCancellation { pageWaiter = null }
+                    }
+                    return@runCatching loaded ?: url
+                }
+                context.startActivity(
+                    Intent(context, BrowserActivity::class.java)
+                        .putExtra(BrowserActivity.EXTRA_URL, url)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
                 val loaded = suspendCancellableCoroutine<String?> { cont ->
                     pageWaiter = { title -> if (cont.isActive) cont.resume(title) }
-                    activity.webView.loadUrl(url)
                     cont.invokeOnCancellation { pageWaiter = null }
                 }
-                return@runCatching loaded ?: url
+                loaded ?: url
             }
-            context.startActivity(
-                Intent(context, BrowserActivity::class.java)
-                    .putExtra(BrowserActivity.EXTRA_URL, url)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-            val loaded = suspendCancellableCoroutine<String?> { cont ->
-                pageWaiter = { title -> if (cont.isActive) cont.resume(title) }
-                cont.invokeOnCancellation { pageWaiter = null }
-            }
-            loaded ?: url
+        } finally {
+            opening = false
         }
     }
 
@@ -274,6 +295,7 @@ object BrowserController {
     suspend fun handoff(context: android.content.Context, reason: String?): Result<Unit> = withContext(Dispatchers.Main) {
         runCatching {
             handoffActive = true
+            browserState = BrowserState.HANDOFF
             val url = currentUrl
             if (url.isNotBlank()) {
                 context.startActivity(
@@ -286,6 +308,7 @@ object BrowserController {
     }
 
     fun close() {
+        browserState = BrowserState.DESTROYED
         main.post { activityRef?.get()?.finish() }
         activityRef = null
         webViewRef = null

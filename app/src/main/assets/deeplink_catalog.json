@@ -13,6 +13,9 @@
     { "package": "com.google.android.dialer", "uri": "tel:", "label": "Dialer" },
     { "package": "com.google.android.apps.messaging", "uri": "smsto:", "label": "Messages" },
     { "package": "com.google.android.youtube", "uri": "vnd.youtube:", "label": "YouTube" },
-    { "package": "com.spotify.music", "uri": "spotify:", "label": "Spotify" }
+    { "package": "com.google.android.youtube", "uri": "https://www.youtube.com/results?search_query=", "label": "YouTube search" },
+    { "package": "com.spotify.music", "uri": "spotify:", "label": "Spotify" },
+    { "package": "com.garena.game.freefire", "uri": "https://play.google.com/store/apps/details?id=com.garena.game.freefire", "label": "Free Fire on Google Play" },
+    { "package": "com.garena.game.freefiremax", "uri": "https://play.google.com/store/apps/details?id=com.garena.game.freefiremax", "label": "Free Fire Max on Google Play" }
   ]
 }

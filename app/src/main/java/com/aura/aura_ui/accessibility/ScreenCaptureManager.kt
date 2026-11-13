@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.aura.aura_ui.state.CaptureState
 import java.io.File
 import java.io.FileOutputStream
 import javax.inject.Inject
@@ -43,14 +44,23 @@ class ScreenCaptureManager @Inject constructor(@ApplicationContext private val c
     private val _consentRequested = MutableStateFlow(0)
     val consentRequested: StateFlow<Int> = _consentRequested.asStateFlow()
 
+    private val _state = MutableStateFlow<CaptureState>(CaptureState.NoConsent)
+    /** Explicit consent/capture lifecycle; [consentRequested] is the UI launch token. */
+    val state: StateFlow<CaptureState> = _state.asStateFlow()
+
+    private var requestToken = 0
+
     fun createConsentIntent(): Intent = projectionManager.createScreenCaptureIntent()
 
     fun requestConsent() {
-        _consentRequested.value = _consentRequested.value + 1
+        requestToken++
+        _state.value = CaptureState.Requested(requestToken)
+        _consentRequested.value = requestToken
     }
 
     fun handleConsentResult(resultCode: Int, data: Intent?) {
         if (resultCode != Activity.RESULT_OK || data == null) {
+            _state.value = CaptureState.NoConsent
             _consentRequested.value = 0
             return
         }
@@ -59,20 +69,23 @@ class ScreenCaptureManager @Inject constructor(@ApplicationContext private val c
         projectionCallback = object : MediaProjection.Callback() {
             override fun onStop() {
                 projection = null
+                _state.value = CaptureState.NoConsent
             }
         }
         if (Build.VERSION.SDK_INT >= 34) {
             projectionCallback?.let { projection?.registerCallback(it, Handler(context.mainLooper)) }
         }
+        _state.value = CaptureState.Granted
         _consentRequested.value = 0
     }
 
-    fun hasConsent(): Boolean = projection != null
+    fun hasConsent(): Boolean = _state.value.hasConsent
 
     suspend fun captureToFile(maxDimension: Int = 1080): Result<File> = mutex.withLock {
         val active = projection ?: return Result.failure(
             IllegalStateException("Screen capture permission has not been granted"),
         )
+        _state.value = CaptureState.Capturing
         val metrics = context.resources.displayMetrics
         val width = metrics.widthPixels
         val height = metrics.heightPixels
@@ -133,6 +146,7 @@ class ScreenCaptureManager @Inject constructor(@ApplicationContext private val c
             runCatching { display?.release() }
             runCatching { reader.close() }
             thread.quitSafely()
+            _state.value = if (projection != null) CaptureState.Granted else CaptureState.NoConsent
         }
     }
 
@@ -152,5 +166,6 @@ class ScreenCaptureManager @Inject constructor(@ApplicationContext private val c
         runCatching { projection?.stop() }
         projection = null
         projectionCallback = null
+        _state.value = CaptureState.NoConsent
     }
 }

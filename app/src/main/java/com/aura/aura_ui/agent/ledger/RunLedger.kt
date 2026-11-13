@@ -7,12 +7,30 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 
 @Serializable
+enum class PlanStepStatus(val wire: String) {
+    PENDING("pending"),
+    IN_PROGRESS("in_progress"),
+    DONE("done"),
+    BLOCKED("blocked"),
+    SKIPPED("skipped"),
+    ;
+
+    companion object {
+        fun fromWire(value: String?): PlanStepStatus =
+            entries.firstOrNull { it.wire == value } ?: PENDING
+    }
+}
+
+@Serializable
 data class PlanStep(
     val id: String,
     val description: String,
-    var status: String = "pending", // pending|in_progress|done|blocked|skipped
+    var status: String = PlanStepStatus.PENDING.wire,
     var note: String? = null,
-)
+) {
+    /** Typed view of the persisted wire value. */
+    val typedStatus: PlanStepStatus get() = PlanStepStatus.fromWire(status)
+}
 
 @Serializable
 data class LedgerFact(
@@ -55,9 +73,9 @@ class RunLedger(
         touch()
     }
 
-    fun updateStep(id: String, status: String, note: String? = null) {
+    fun updateStep(id: String, status: PlanStepStatus, note: String? = null) {
         state.steps.firstOrNull { it.id == id }?.let {
-            it.status = status
+            it.status = status.wire
             if (note != null) it.note = note
             touch()
         }

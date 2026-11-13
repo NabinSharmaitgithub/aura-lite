@@ -5,6 +5,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.aura.aura_ui.state.CheckpointAvailability
 import kotlinx.serialization.json.Json
 
 /** Atomic checkpoint persistence (temp file + rename) for resumable runs. */
@@ -40,4 +41,10 @@ class RunCheckpointStore @Inject constructor(@ApplicationContext context: Contex
     fun clear(sessionId: String) {
         runCatching { File(dir, "$sessionId.json").delete() }
     }
+
+    /** Is there a usable checkpoint to resume from? */
+    fun availability(): CheckpointAvailability = runCatching {
+        val c = latest() ?: return@runCatching CheckpointAvailability.None
+        CheckpointAvailability.Available(c.sessionId, c.goal, c.stepCount)
+    }.getOrDefault(CheckpointAvailability.None)
 }

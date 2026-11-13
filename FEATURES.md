@@ -14,7 +14,7 @@ This document lists the features currently present in this repository (`aura-lit
 - **Policy/safety pipeline** (`mcp-server/src/main/kotlin/com/aura/mcp/server/policy/SensitivePolicy.kt`, `mcp-server/src/main/kotlin/com/aura/mcp/guard/ActionGuard.kt`) — fail-closed sensitive app/credential/payment/OTP/secret screening, stale/invalid `som_id`/handle refusals, pause/control/foreground/handoff checks.
 - **Device tool catalog** (`ToolCatalog.kt`) covering UI, apps/navigation, system/media/notifications/contacts/files, browser, and more. Examples:
   - **See/verify:** `read_screen`, `perceive_screen`, `get_screenshot`, `request_screen_capture_permission`, `verify_action`, `wait_for`, `watch_device_events`, `end_session`
-  - **Touch/input/navigation:** `tap`, `swipe`, `scroll`, `set_value`, `type_text`, `press_key`, `press_enter`, `clipboard`, `launch_app`, `lookup_app`
+  - **Touch/input/navigation:** `tap`, `swipe`, `scroll`, `set_value`, `type_text`, `press_key`, `press_enter`, `clipboard`, `launch_app`, `lookup_app`, `install_app`
   - **Shortcuts/intents:** `open_deeplink`, `resolve_deeplink`, `list_app_deeplinks`, `system_intent`, `web_search`
   - **Assistant plane:** `read_notifications`, `notification_action`, `dismiss_notification`, `get_media_sessions`, `media_control`, `resolve_contact`, `find_files`, `open_file`
   - **Browser:** `browser_open`, `browser_read`, `browser_find`, `browser_act`, `browser_wait`, `browser_screenshot`, `browser_extract`, `browser_upload`, `browser_tabs`, `browser_handoff`, `browser_close`
@@ -57,7 +57,7 @@ This document lists the features currently present in this repository (`aura-lit
 - **Session logging & tracing** (`app/src/main/java/com/aura/aura_ui/data/session/*`) — JSONL sessions, traces, outcomes, retention.
 
 ## Apps, browser, data & integrations
-- **App resolution and launch** (`app/src/main/java/com/aura/aura_ui/automation/AppResolver.kt`) — installed app discovery, lookup by name/package/alias, launch, deeplink resolve/open/list (with resilient WhatsApp/package resolution fallbacks).
+- **App resolution and launch** (`app/src/main/java/com/aura/aura_ui/automation/AppResolver.kt`) — installed app discovery, lookup by name/package/alias, launch, install (Play Store listing open for not-yet-installed apps), deeplink resolve/open/list (with resilient WhatsApp/package resolution fallbacks).
 - **Data tools** (`app/src/main/java/com/aura/aura_ui/automation/DataTools.kt`) — contacts, files/media, clipboard, SMS/dial helpers (permission-gated).
 - **Browser automation** (`app/src/main/java/com/aura/aura_ui/browser/BrowserActivity.kt`, browser controller/bridge integration) — in-app WebView with DOM read/act/find/extract/upload/tabs/handoff and generation tracking.
 - **Notifications & media** — notification listener/actions/dismiss and media session listing/control (`app/src/main/java/com/aura/aura_ui/notifications/*`, system/media bridge paths).

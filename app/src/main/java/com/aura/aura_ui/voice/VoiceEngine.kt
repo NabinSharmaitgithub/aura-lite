@@ -9,6 +9,8 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.aura.aura_ui.state.TtsState
+import com.aura.aura_ui.state.VoiceSessionState
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -43,6 +45,18 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
     private val _listening = MutableStateFlow(false)
     val listening: StateFlow<Boolean> = _listening.asStateFlow()
 
+    private val _session = MutableStateFlow(VoiceSessionState.IDLE)
+    /** Explicit speech-recognition lifecycle; [listening] is derived from it. */
+    val session: StateFlow<VoiceSessionState> = _session.asStateFlow()
+
+    private val _ttsState = MutableStateFlow(TtsState.UNINITIALIZED)
+    val ttsState: StateFlow<TtsState> = _ttsState.asStateFlow()
+
+    private fun setSession(state: VoiceSessionState) {
+        _session.value = state
+        _listening.value = state == VoiceSessionState.LISTENING
+    }
+
     private val _speaking = MutableStateFlow(false)
     val speaking: StateFlow<Boolean> = _speaking.asStateFlow()
 
@@ -53,7 +67,7 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
             return Result.failure(IllegalStateException("Voice capture is already in use"))
         }
         _transcript.value = ""
-        _listening.value = true
+        setSession(VoiceSessionState.LISTENING)
         return try {
             withContext(Dispatchers.Main) {
                 suspendCancellableCoroutine { cont ->
@@ -61,7 +75,7 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
                     fun finish(result: Result<String>) {
                         if (settled) return
                         settled = true
-                        _listening.value = false
+                        setSession(VoiceSessionState.IDLE)
                         owner.set(false)
                         recognizer?.destroy()
                         recognizer = null
@@ -106,13 +120,13 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
                         runCatching { speech.cancel() }
                         runCatching { speech.destroy() }
                         recognizer = null
-                        _listening.value = false
+                        setSession(VoiceSessionState.IDLE)
                         owner.set(false)
                     }
                 }
             }
         } catch (t: Throwable) {
-            _listening.value = false
+            setSession(VoiceSessionState.IDLE)
             owner.set(false)
             Result.failure(t)
         }
@@ -122,7 +136,7 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
         runCatching { recognizer?.cancel() }
         runCatching { recognizer?.destroy() }
         recognizer = null
-        _listening.value = false
+        setSession(VoiceSessionState.IDLE)
         owner.set(false)
     }
 
@@ -140,6 +154,13 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
         _speaking.value = false
     }
 
+    /** Re-resolve and re-apply the persisted TTS preference (engine + voice) on the live engine. */
+    fun refreshTtsVoice(): Boolean {
+        val engine = ensureTts() ?: return false
+        applyPreferredVoice(engine)
+        return true
+    }
+
     fun voices(): List<String> = runCatching { ensureTts(); tts?.voices?.map { it.name }.orEmpty() }.getOrDefault(emptyList())
 
     fun availableEngines(): List<String> = runCatching {
@@ -153,6 +174,7 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
         tts = null
         ttsReady = false
         ttsEnginePackage = null
+        _ttsState.value = TtsState.UNINITIALIZED
     }
 
     private fun preferredTtsSetting(): String =
@@ -195,11 +217,14 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
             runCatching { tts?.shutdown() }
             tts = null
             ttsReady = false
+            _ttsState.value = TtsState.UNINITIALIZED
         }
+        if (tts == null) _ttsState.value = TtsState.INITIALIZING
         ttsEnginePackage = desiredEngine
         tts = if (desiredEngine != null) {
             TextToSpeech(context, { status ->
                 ttsReady = status == TextToSpeech.SUCCESS
+                _ttsState.value = if (ttsReady) TtsState.READY else TtsState.FAILED
                 if (ttsReady) {
                     tts?.let { engine ->
                         applyPreferredVoice(engine)
@@ -215,6 +240,7 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
         } else {
             TextToSpeech(context) { status ->
                 ttsReady = status == TextToSpeech.SUCCESS
+                _ttsState.value = if (ttsReady) TtsState.READY else TtsState.FAILED
                 if (ttsReady) {
                     tts?.let { engine ->
                         applyPreferredVoice(engine)

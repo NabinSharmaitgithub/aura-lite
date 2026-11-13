@@ -9,6 +9,7 @@ import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.aura.aura_ui.state.SessionLifecycle
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -40,10 +41,14 @@ object TraceType {
 
 object SessionOutcome {
     const val SUCCESS = "success"
+    const val PARTIAL = "partial"
     const val FAILURE = "failure"
     const val CANCELLED = "cancelled"
     const val BUDGET_EXHAUSTED = "budget_exhausted"
+    const val QUOTA_EXHAUSTED = "quota_exhausted"
+    const val TIME_EXHAUSTED = "time_exhausted"
     const val PERMISSION_DENIED = "permission_denied"
+    const val REMOTE_BLOCKED = "remote_blocked"
 }
 
 data class TraceEvent(
@@ -127,6 +132,7 @@ class SessionWriter internal constructor(
     private val dir: File,
 ) {
     private val lock = Any()
+    private var lifecycle: SessionLifecycle = SessionLifecycle.ACTIVE
 
     init {
         dir.mkdirs()
@@ -156,7 +162,10 @@ class SessionWriter internal constructor(
         emit(TraceEvent(System.currentTimeMillis(), TraceType.VERIFY, id = id, text = text, ok = ok))
 
     fun answer(text: String) = emit(TraceEvent(System.currentTimeMillis(), TraceType.ANSWER, text = text))
-    fun error(message: String) = emit(TraceEvent(System.currentTimeMillis(), TraceType.ERROR, error = message, text = message))
+    fun error(message: String) = synchronized(lock) {
+        if (lifecycle != SessionLifecycle.ACTIVE) lifecycle = SessionLifecycle.ERROR
+        emit(TraceEvent(System.currentTimeMillis(), TraceType.ERROR, error = message, text = message))
+    }
     fun interrupt(reason: String) = emit(TraceEvent(System.currentTimeMillis(), TraceType.INTERRUPT, text = reason))
 
     fun screenshot(file: File, generation: Int? = null): String {
@@ -170,13 +179,16 @@ class SessionWriter internal constructor(
         return name
     }
 
-    fun end(outcome: String, steps: Int, summary: String? = null) =
+    fun end(outcome: String, steps: Int, summary: String? = null) = synchronized(lock) {
+        if (lifecycle != SessionLifecycle.ACTIVE) return@synchronized
+        lifecycle = SessionLifecycle.ENDED
         emit(
             TraceEvent(
                 System.currentTimeMillis(), TraceType.SESSION_END,
                 outcome = outcome, steps = steps, text = summary,
             ),
         )
+    }
 
     fun screenshotDir(): File = File(dir, "screens").also { it.mkdirs() }
 

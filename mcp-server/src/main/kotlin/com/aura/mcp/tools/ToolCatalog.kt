@@ -234,6 +234,12 @@ object ToolCatalog {
             schema(props = mapOf("app_name" to str("Human app name."), "package" to str("Android package name."))),
             ToolDomain.APPS, mutating = true,
         ),
+        ToolDefinition(
+            "install_app",
+            "Open the Google Play Store listing for an app that is not installed yet, so the user can install it (and so an install flow can be completed).",
+            schema(props = mapOf("app_name" to str("Human app name or Android package name (e.g. com.garena.game.freefire)."), "package" to str("Android package name for exact resolution."))),
+            ToolDomain.APPS, mutating = true, risky = true,
+        ),
         ToolDefinition("lookup_app", "Resolve an app name to installed packages.", schema(required = listOf("query"), props = mapOf("query" to str("App name or partial name."))), ToolDomain.APPS),
         ToolDefinition("open_deeplink", "Open a deep link URI, optionally pinned to a package.", schema(required = listOf("uri"), props = mapOf("uri" to str("URI to open."), "package" to str("Target package."))), ToolDomain.APPS, mutating = true),
         ToolDefinition("resolve_deeplink", "Check which apps can handle a URI.", schema(required = listOf("uri"), props = mapOf("uri" to str("URI to resolve."))), ToolDomain.APPS),
@@ -290,6 +296,7 @@ object ToolCatalog {
         ToolDefinition("load_tools", "Load additional tool schemas on demand when the current toolset is not enough. Pass exact tool names from the tool index; already-loaded tools are ignored.", schema(required = listOf("tools"), props = mapOf("tools" to arr("Tool names to load into the active run."))), ToolDomain.SESSION),
         ToolDefinition("ledger_add_fact", "Record a durable fact discovered during this run (name, value, source). Facts are re-injected into the prompt.", schema(required = listOf("key", "value"), props = mapOf("key" to str("Short fact key."), "value" to str("Fact value."), "source" to str("Where the fact came from."))), ToolDomain.SESSION),
         ToolDefinition("ledger_note_dead_end", "Record an approach that failed so the agent does not repeat it.", schema(required = listOf("note"), props = mapOf("note" to str("What failed and why."))), ToolDomain.SESSION),
+        ToolDefinition("ledger_set_plan", "Set or replace the run's to-do/plan steps (Cursor-style). Creates steps s1..sN in order with status pending.", schema(required = listOf("steps"), props = mapOf("steps" to arr("Ordered list of short step descriptions."))), ToolDomain.SESSION),
         ToolDefinition("ledger_update_step", "Update the status of a plan step in the run ledger.", schema(required = listOf("id", "status"), props = mapOf("id" to str("Plan step id, e.g. s1."), "status" to str("New status.", "done", listOf("pending", "in_progress", "done", "blocked", "skipped")), "note" to str("Optional note."))), ToolDomain.SESSION),
         ToolDefinition("memory_remember", "Store a durable user preference/fact in long-term memory.", schema(required = listOf("text"), props = mapOf("text" to str("What to remember."), "scope" to str("global or an app package name.", "global"))), ToolDomain.SESSION),
         ToolDefinition("memory_search", "Search durable memory for facts relevant to a query.", schema(required = listOf("query"), props = mapOf("query" to str("Search text."), "limit" to int("Maximum facts to return.", 10, 1, 50))), ToolDomain.SESSION),
@@ -312,7 +319,7 @@ object ToolCatalog {
         name.startsWith("browser_") || name == "web_search" -> Toolset.BROWSER
         name in setOf(
             "ask_user", "ask_aura", "load_tools", "end_session",
-            "ledger_add_fact", "ledger_note_dead_end", "ledger_update_step",
+            "ledger_add_fact", "ledger_note_dead_end", "ledger_set_plan", "ledger_update_step",
             "memory_remember", "memory_search", "proof_status", "skills_list", "research_search",
             "read_notifications", "notification_action", "dismiss_notification",
             "media_control", "get_media_sessions",

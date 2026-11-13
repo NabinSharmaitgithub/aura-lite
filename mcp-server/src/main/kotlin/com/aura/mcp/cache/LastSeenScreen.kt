@@ -1,5 +1,6 @@
 package com.aura.mcp.cache
 
+import com.aura.mcp.cache.ScreenFreshness
 import kotlinx.serialization.json.JsonObject
 
 /** Tracks last seen screen generation/signature and lightweight metadata for diff/eviction logic. */
@@ -25,5 +26,12 @@ class LastSeenScreen {
         signature = null
         packageName = null
         snapshot = null
+    }
+
+    /** How fresh this screen is relative to an expected generation. */
+    fun freshness(expectedGeneration: Long): ScreenFreshness = when {
+        generation == -1L -> ScreenFreshness.EMPTY
+        generation == expectedGeneration -> ScreenFreshness.FRESH
+        else -> ScreenFreshness.STALE
     }
 }

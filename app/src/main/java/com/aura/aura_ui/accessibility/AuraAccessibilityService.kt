@@ -12,6 +12,7 @@ import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.aura.aura_ui.services.AssistantForegroundService
+import com.aura.aura_ui.state.AccessibilityState
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -42,6 +43,9 @@ class AuraAccessibilityService : AccessibilityService() {
     val signals: SharedFlow<AccessibilitySignal> = _signals.asSharedFlow()
 
     private var lastVolumeDownAt = 0L
+
+    /** Explicit accessibility-service state derived from the bound instance. */
+    val state: AccessibilityState get() = if (instance != null) AccessibilityState.CONNECTED else AccessibilityState.DISCONNECTED
 
     override fun onServiceConnected() {
         super.onServiceConnected()

@@ -8,6 +8,7 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import com.aura.aura_ui.R
 import com.aura.aura_ui.MainActivity
+import com.aura.aura_ui.state.AskUserState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -38,6 +39,10 @@ class AskUserBroker @Inject constructor(
     private val _pending = MutableStateFlow<Pending?>(null)
     val pending: StateFlow<Pending?> = _pending.asStateFlow()
 
+    private val _state = MutableStateFlow<AskUserState>(AskUserState.Idle)
+    /** Explicit question lifecycle: idle, open, answered/dismissed/timed out. */
+    val state: StateFlow<AskUserState> = _state.asStateFlow()
+
     private var reply: CompletableDeferred<String>? = null
 
     /** Suspend until the user answers. Returns a placeholder when declined or timed out. */
@@ -54,22 +59,29 @@ class AskUserBroker @Inject constructor(
             askedAt = System.currentTimeMillis(),
         )
         _pending.value = request
+        _state.value = AskUserState.Open(request.id, question, options)
         postNotification(request)
         return try {
             withTimeout(timeoutSeconds.coerceAtLeast(5) * 1000L) { deferred.await() }
         } catch (_: TimeoutCancellationException) {
+            _state.value = AskUserState.TimedOut(request.id)
             "(no answer within ${timeoutSeconds}s)"
         } finally {
             reply = null
             _pending.value = null
+            if (_state.value !is AskUserState.Answered && _state.value !is AskUserState.Dismissed) {
+                _state.value = AskUserState.Idle
+            }
         }
     }
 
     fun answer(answer: String) {
+        _pending.value?.let { _state.value = AskUserState.Answered(it.id, answer.trim()) }
         reply?.complete(answer.trim())
     }
 
     fun dismiss() {
+        _pending.value?.let { _state.value = AskUserState.Dismissed(it.id) }
         reply?.complete("(dismissed)")
     }
 

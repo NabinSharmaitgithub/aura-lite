@@ -9,7 +9,19 @@ import com.aura.aura_ui.agent.runtime.KeepAwakeController
 import com.aura.aura_ui.agent.runtime.RunLifecycleHooks
 import com.aura.aura_ui.agent.runtime.StatusNarrator
 import com.aura.aura_ui.agent.ledger.RunBudget
+import com.aura.aura_ui.agent.ledger.BudgetStopKind
+import com.aura.aura_ui.agent.ledger.PlanStepStatus
 import com.aura.aura_ui.agent.ledger.RunLedger
+import com.aura.aura_ui.agent.report.ReportEvidence
+import com.aura.aura_ui.agent.report.RunEntryMode
+import com.aura.aura_ui.agent.report.RunReport
+import com.aura.aura_ui.agent.report.RunTermination
+import com.aura.aura_ui.agent.strategy.RouteAction
+import com.aura.aura_ui.agent.strategy.RouteHintsStore
+import com.aura.aura_ui.state.RunEvent
+import com.aura.aura_ui.state.RunPhase
+import com.aura.aura_ui.state.NarrationState
+import com.aura.aura_ui.state.RunTransitions
 import com.aura.aura_ui.agent.llm.LlmClient
 import com.aura.aura_ui.agent.llm.LlmEndpointCatalog
 import com.aura.aura_ui.agent.llm.LlmMessage
@@ -76,11 +88,14 @@ class AgentRuntime @Inject constructor(
     private val remoteGate: com.aura.aura_ui.firebase.RemoteGate,
     @ApplicationContext private val appContext: Context,
     private val checkpointStore: RunCheckpointStore,
+    private val routeHints: RouteHintsStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val keepAwake = KeepAwakeController(appContext)
     private val evidence = CompletionEvidence()
     private var currentRunId: String? = null
+    @Volatile private var activeLedger: RunLedger? = null
+    @Volatile private var routeHintUsed: String? = null
 
     /** Ends a run and, when the user enabled it in Settings → Backblaze, uploads its screenshots. */
     private fun endSession(session: com.aura.aura_ui.data.session.SessionWriter, outcome: String, steps: Int, answer: String?) {
@@ -102,6 +117,7 @@ class AgentRuntime @Inject constructor(
     private val clientSideTools = setOf(
         "ledger_add_fact",
         "ledger_note_dead_end",
+        "ledger_set_plan",
         "ledger_update_step",
         "memory_remember",
         "memory_search",
@@ -112,19 +128,20 @@ class AgentRuntime @Inject constructor(
 
     val isRunning: Boolean get() = job?.isActive == true
 
-    fun submit(goal: String, voice: Boolean = false) {
+    fun submit(goal: String, voice: Boolean = false, entryMode: RunEntryMode = RunEntryMode.FRESH) {
         if (isRunning) return
         if (goal.isBlank()) return
         cancelRequested = false
         paused = false
+        routeHintUsed = null
         val runId = "run-${System.currentTimeMillis()}"
         currentRunId = runId
         ActiveRunRegistry.start(runId, goal)
         ControlLock.setUserPaused(false)
-        StatusNarrator.update("starting", goal.take(80))
+        StatusNarrator.update(NarrationState.STARTING, goal.take(80))
         job = scope.launch {
             try {
-                runSession(goal.trim(), voice)
+                runSession(goal.trim(), voice, entryMode)
             } finally {
                 // Early returns inside runSession (remote gate/key/model checks) skip its inner
                 // finally, so always clean up the run registry/wake lock here as well.
@@ -138,7 +155,8 @@ class AgentRuntime @Inject constructor(
         ControlLock.setUserPaused(false)
         currentRunId?.let { ActiveRunRegistry.finish(it) }
         currentRunId = null
-        StatusNarrator.update("idle", null)
+        activeLedger = null
+        StatusNarrator.update(NarrationState.IDLE, null)
     }
 
     fun pause() {
@@ -146,8 +164,8 @@ class AgentRuntime @Inject constructor(
         paused = true
         ControlLock.setUserPaused(true)
         currentRunId?.let { ActiveRunRegistry.update(it, status = "paused", paused = true) }
-        StatusNarrator.update("paused", "run paused by user")
-        _state.value = _state.value.copy(paused = true, status = "paused")
+        StatusNarrator.update(NarrationState.PAUSED, "run paused by user")
+        _state.value = _state.value.copy(phase = phaseAfter(RunEvent.Pause))
         writer?.interrupt("Paused by user")
         checkpoint(reason = "paused_by_user")
     }
@@ -157,15 +175,30 @@ class AgentRuntime @Inject constructor(
         paused = false
         ControlLock.setUserPaused(false)
         currentRunId?.let { ActiveRunRegistry.update(it, status = "running", paused = false) }
-        StatusNarrator.update("resuming", "re-verifying screen state")
-        _state.value = _state.value.copy(paused = false, status = "planning")
+        StatusNarrator.update(NarrationState.RESUMING, "re-verifying screen state")
+        _state.value = _state.value.copy(phase = phaseAfter(RunEvent.Resume))
+    }
+
+    /**
+     * Returns the next phase for [event], or the current phase when the event is illegal.
+     * Illegal events are recorded only in debug builds; a late callback after termination must
+     * never crash a user run.
+     */
+    private fun phaseAfter(event: RunEvent): RunPhase {
+        val current = _state.value.phase
+        return runCatching { RunTransitions.next(current, event) }.getOrElse { error ->
+            if (BuildConfig.DEBUG) {
+                addTrace(TraceType.ERROR, error.message ?: "Illegal run transition", ok = false)
+            }
+            current
+        }
     }
 
     fun stop() {
         cancelRequested = true
         paused = false
         ControlLock.setUserPaused(false)
-        StatusNarrator.update("stopping", null)
+        StatusNarrator.update(NarrationState.STOPPING, null)
         currentRunId?.let { ActiveRunRegistry.update(it, status = "cancelling", cancelled = true) }
         job?.cancel()
     }
@@ -195,31 +228,33 @@ class AgentRuntime @Inject constructor(
             append("\nRe-read the screen and confirm the current state before performing any action.")
             append(ledgerHint)
         }
-        submit(resumeGoal)
+        submit(resumeGoal, entryMode = RunEntryMode.RESUMED)
         return true
     }
 
-    private suspend fun runSession(goal: String, voice: Boolean) {
+    private suspend fun runSession(goal: String, voice: Boolean, entryMode: RunEntryMode) {
         // Best-effort refresh; RemoteGate keeps the last known state when offline.
         runCatching { remoteGate.refresh() }
         if (remoteGate.isBlocked()) {
             _state.value = AgentRunState(
-                running = false,
+                phase = RunPhase.ERROR,
                 goal = goal,
-                status = "error",
                 error = "AURA has been remotely disabled by its maintainers. Please update the app.",
-                outcome = SessionOutcome.PERMISSION_DENIED,
+                outcome = SessionOutcome.REMOTE_BLOCKED,
+                termination = RunTermination.REMOTE_BLOCKED,
+                entryMode = entryMode,
                 startedAt = System.currentTimeMillis(),
             )
             return
         }
         if (BuildConfig.VERSION_CODE < remoteGate.minSupportedVersionCode().toInt()) {
             _state.value = AgentRunState(
-                running = false,
+                phase = RunPhase.ERROR,
                 goal = goal,
-                status = "error",
                 error = "AURA Lite " + BuildConfig.VERSION_NAME + " is no longer supported; please update.",
-                outcome = SessionOutcome.PERMISSION_DENIED,
+                outcome = SessionOutcome.REMOTE_BLOCKED,
+                termination = RunTermination.REMOTE_BLOCKED,
+                entryMode = entryMode,
                 startedAt = System.currentTimeMillis(),
             )
             return
@@ -232,14 +267,14 @@ class AgentRuntime @Inject constructor(
         val key = keyStore.keyFor(endpoint)
         val model = settings.llmModelId.ifBlank { endpoint.defaultModelId.orEmpty() }
 
-        StatusNarrator.update("planning", goal.take(80))
+        StatusNarrator.update(NarrationState.PLANNING, goal.take(80))
         seq = 0
         _state.value = AgentRunState(
-            running = true,
+            phase = phaseAfter(RunEvent.Start),
             goal = goal,
-            status = "planning",
             provider = endpoint.displayName,
             model = model,
+            entryMode = entryMode,
             startedAt = System.currentTimeMillis(),
         )
 
@@ -261,6 +296,7 @@ class AgentRuntime @Inject constructor(
         RunLifecycleHooks.start(session.sessionId, goal)
 
         val ledger = RunLedger.create(session.sessionId, goal)
+        activeLedger = ledger
         val budget = RunBudget(maxSteps = settings.maxSteps)
         runCatching { session.writeLedger(ledger.snapshotJson()) }
 
@@ -268,6 +304,16 @@ class AgentRuntime @Inject constructor(
         val toolDefs = mcp.listTools()
         val toolSpecs = toolDefs.map { LlmToolSpec(it.name, it.description, it.inputSchema) }.toMutableList()
         val enabledSkills = runCatching { skills.enabled() }.getOrDefault(emptyList())
+        // Learned, structure-only routes are injected as candidates (never user content).
+        val routeHintBlock = if (settings.learningsEnabled) {
+            runCatching { routeHints.promptBlock(goal, foreground) }.getOrDefault("")
+        } else {
+            ""
+        }
+        if (routeHintBlock.isNotBlank()) {
+            routeHintUsed = routeHintBlock.lineSequence().drop(1).firstOrNull()?.trim()?.removePrefix("- ")
+        }
+        val routeActions = mutableListOf<RouteAction>()
         // Register enabled skill packs as MCP prompts so remote clients can invoke them too.
         enabledSkills.forEach { skill ->
             runCatching {
@@ -295,6 +341,7 @@ class AgentRuntime @Inject constructor(
             screenshotCapable = settings.screenCaptureEnabled,
             ledgerBlock = ledger.toPromptBlock(),
             budgetNote = "Max steps ${settings.maxSteps}. Verify after mutating actions.",
+            routeHintBlock = routeHintBlock,
         )
         val messages = mutableListOf(
             LlmMessage.system(system),
@@ -313,10 +360,16 @@ class AgentRuntime @Inject constructor(
         try {
             val maxSteps = settings.maxSteps
             while (!cancelRequested && steps < maxSteps) {
-                val stopReason = budget.shouldStop(steps)
-                if (stopReason != null) {
-                    outcome = SessionOutcome.BUDGET_EXHAUSTED
-                    finalAnswer = "Stopped: $stopReason"
+                val stopKind = budget.stopKind(steps)
+                if (stopKind != null) {
+                    outcome = when (stopKind) {
+                        BudgetStopKind.STEPS ->
+                            if (steps > 0) SessionOutcome.PARTIAL else SessionOutcome.BUDGET_EXHAUSTED
+                        BudgetStopKind.TIME -> SessionOutcome.TIME_EXHAUSTED
+                        BudgetStopKind.REQUESTS -> SessionOutcome.QUOTA_EXHAUSTED
+                        BudgetStopKind.FAILURES -> SessionOutcome.FAILURE
+                    }
+                    finalAnswer = "Stopped: ${budget.reason(stopKind)}"
                     session.error(finalAnswer!!)
                     ledger.finish(outcome, finalAnswer)
                     runCatching { session.writeLedger(ledger.snapshotJson()) }
@@ -333,7 +386,7 @@ class AgentRuntime @Inject constructor(
                 }
                 evictStaleImages(messages)
 
-                _state.value = _state.value.copy(status = "planning", streamText = "")
+                _state.value = _state.value.copy(phase = phaseAfter(RunEvent.Plan), streamText = "")
                 session.thought("Planning the next action.")
                 budget.onRequest()
                 val response = callModel(
@@ -363,7 +416,7 @@ class AgentRuntime @Inject constructor(
                         "Your previous message described a tool call as text but did not use the tool interface. " +
                             "Call the tool directly now. Do not answer the user yet.",
                     )
-                    _state.value = _state.value.copy(status = "planning", streamText = "")
+                    _state.value = _state.value.copy(phase = phaseAfter(RunEvent.Plan), streamText = "")
                     continue
                 }
 
@@ -420,6 +473,8 @@ class AgentRuntime @Inject constructor(
                         messages += LlmMessage.tool(call.id, call.name, clientSideResult.toString())
                         runCatching { session.writeLedger(ledger.snapshotJson()) }
                         addTrace(TraceType.TOOL_RESULT, "Client tool: ${call.name}", name = call.name)
+                        // Surface the maintained plan steps (todo list) in the live run state.
+                        _state.value = _state.value.copy(planSteps = ledger.state.steps.toList())
                         continue
                     }
                     if (call.name in clientSideTools) {
@@ -472,8 +527,8 @@ class AgentRuntime @Inject constructor(
                     }
 
                     steps++
-                    _state.value = _state.value.copy(status = "acting", stepCount = steps)
-                    StatusNarrator.update("acting", call.name)
+                    _state.value = _state.value.copy(phase = phaseAfter(RunEvent.Act(call.name)), stepCount = steps)
+                    StatusNarrator.update(NarrationState.ACTING, call.name)
                     currentRunId?.let { ActiveRunRegistry.update(it, status = "acting") }
                     val callId = call.id.ifBlank { "c$steps" }
                     session.toolCall(callId, call.name, call.arguments)
@@ -500,6 +555,17 @@ class AgentRuntime @Inject constructor(
                         name = call.name,
                         durationMs = duration,
                     )
+                    // Publish the agent cursor for mutating actions so the UI can show where Aura
+                    // is tapping, with a motion animation toward the new point.
+                    if (result.ok && definition.mutating) {
+                        val point = actionPoint(call.arguments)
+                        _state.value = _state.value.copy(cursor = AgentCursorState(point.first, point.second))
+                        // Record a structure-only action for learned route hints.
+                        routeActions += RouteAction(
+                            tool = call.name,
+                            target = RouteHintsStore.structuralTarget(call.arguments),
+                        )
+                    }
 
                     session.toolResult(
                         id = callId,
@@ -598,8 +664,8 @@ class AgentRuntime @Inject constructor(
                     runCatching { session.writeLedger(ledger.snapshotJson()) }
 
                     if (definition.mutating) {
-                        _state.value = _state.value.copy(status = "verifying")
-                        StatusNarrator.update("verifying", call.name)
+                        _state.value = _state.value.copy(phase = phaseAfter(RunEvent.Verify))
+                        StatusNarrator.update(NarrationState.VERIFYING, call.name)
                         addTrace(TraceType.SETTLE, "Settling after ${call.name}", name = call.name)
                         val observation = runCatching {
                             mcp.callTool(
@@ -652,8 +718,18 @@ class AgentRuntime @Inject constructor(
             }
 
             if (finalAnswer == null) {
-                outcome = if (cancelRequested) SessionOutcome.CANCELLED else SessionOutcome.BUDGET_EXHAUSTED
-                finalAnswer = if (cancelRequested) "Stopped." else "I used all $maxSteps steps without finishing. Nothing else was changed."
+                // Honest termination: distinguish a user cancel, an exhausted budget with progress
+                // (partial) and an exhausted budget with nothing achieved.
+                outcome = when {
+                    cancelRequested -> SessionOutcome.CANCELLED
+                    steps > 0 -> SessionOutcome.PARTIAL
+                    else -> SessionOutcome.BUDGET_EXHAUSTED
+                }
+                finalAnswer = when (outcome) {
+                    SessionOutcome.CANCELLED -> "Stopped."
+                    SessionOutcome.PARTIAL -> "I used all $maxSteps steps without finishing. Partial progress is in the report; nothing else was changed."
+                    else -> "No steps could be completed within the run budget."
+                }
             }
 
             ledger.finish(outcome, finalAnswer)
@@ -667,28 +743,42 @@ class AgentRuntime @Inject constructor(
             )
             if (outcome == SessionOutcome.SUCCESS) {
                 checkpointStore.clear(session.sessionId)
+                if (settings.learningsEnabled && routeActions.isNotEmpty()) {
+                    runCatching { routeHints.record(foreground, goal, routeActions) }
+                }
             } else {
                 checkpoint("outcome_$outcome", steps)
             }
+            val report = buildReport(outcome, steps, finalAnswer, null)
             _state.value = _state.value.copy(
-                running = false,
-                paused = false,
-                status = if (outcome == SessionOutcome.SUCCESS) "done" else "error",
+                phase = phaseAfter(
+                    RunEvent.Terminate(
+                        when (outcome) {
+                            SessionOutcome.SUCCESS -> RunPhase.DONE
+                            SessionOutcome.PARTIAL -> RunPhase.PARTIAL
+                            SessionOutcome.CANCELLED -> RunPhase.CANCELLED
+                            else -> RunPhase.ERROR
+                        },
+                    ),
+                ),
                 answer = finalAnswer,
                 outcome = outcome,
                 stepCount = steps,
                 streamText = "",
+                termination = report.termination,
+                report = report,
             )
         } catch (cancel: CancellationException) {
             checkpoint("cancelled", steps)
             endSession(session, SessionOutcome.CANCELLED, steps, "Cancelled")
+            val report = buildReport(SessionOutcome.CANCELLED, steps, "Stopped.", null)
             _state.value = _state.value.copy(
-                running = false,
-                paused = false,
-                status = "error",
+                phase = phaseAfter(RunEvent.Terminate(RunPhase.CANCELLED)),
                 outcome = SessionOutcome.CANCELLED,
                 answer = "Stopped.",
                 streamText = "",
+                termination = report.termination,
+                report = report,
             )
             throw cancel
         } catch (t: Throwable) {
@@ -697,14 +787,15 @@ class AgentRuntime @Inject constructor(
             checkpoint("error", steps)
             endSession(session, SessionOutcome.FAILURE, steps, message)
             addTrace(TraceType.ERROR, message, ok = false)
+            val report = buildReport(SessionOutcome.FAILURE, steps, null, message)
             _state.value = _state.value.copy(
-                running = false,
-                paused = false,
-                status = "error",
+                phase = phaseAfter(RunEvent.Terminate(RunPhase.ERROR)),
                 error = message,
                 outcome = SessionOutcome.FAILURE,
                 answer = null,
                 streamText = "",
+                termination = report.termination,
+                report = report,
             )
         } finally {
             val endedSessionId = writer?.sessionId ?: _state.value.sessionId
@@ -751,7 +842,7 @@ class AgentRuntime @Inject constructor(
                         stateBuilder.append(event.text)
                         _state.value = _state.value.copy(
                             streamText = stateBuilder.toString().takeLast(4000),
-                            status = "planning",
+                            phase = phaseAfter(RunEvent.Plan),
                         )
                     }
                     is LlmStreamEvent.ReasoningDelta -> Unit
@@ -849,6 +940,26 @@ class AgentRuntime @Inject constructor(
         _state.value = _state.value.copy(trace = next)
     }
 
+    private fun actionPoint(args: JsonObject): Pair<Float, Float> {
+        val bounds = args["bounds"] as? kotlinx.serialization.json.JsonArray
+        if (bounds != null) {
+            fun coord(i: Int): Float? =
+                (bounds.getOrNull(i) as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()
+            val l = coord(0) ?: 0f
+            val t = coord(1) ?: 0f
+            val r = coord(2) ?: 0f
+            val b = coord(3) ?: 0f
+            if (r > l && b > t) return Pair((l + r) / 2f, (t + b) / 2f)
+        }
+        val x = (args["x"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()
+            ?: (args["to_x"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()
+            ?: 0f
+        val y = (args["y"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()
+            ?: (args["to_y"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()
+            ?: 0f
+        return Pair(x, y)
+    }
+
     /**
      * Handles agent-local helper tools. Returns null when [name] is not a client-side tool;
      * returns a JSON result envelope (ok/error) when it is.
@@ -881,14 +992,24 @@ class AgentRuntime @Inject constructor(
                 buildJsonObject { put("ok", true) }
             }
         }
+        "ledger_set_plan" -> {
+            val steps = JsonArgs.stringList(args, "steps")
+            if (steps.isEmpty()) {
+                errorJson("ledger_set_plan requires a non-empty steps array")
+            } else {
+                ledger.setPlan(steps)
+                buildJsonObject { put("ok", true); put("count", steps.size) }
+            }
+        }
         "ledger_update_step" -> {
             val id = JsonArgs.str(args, "id")
-            val status = JsonArgs.str(args, "status")
-            if (id == null || status == null) {
+            val rawStatus = JsonArgs.str(args, "status")
+            if (id == null || rawStatus == null) {
                 errorJson("ledger_update_step requires id and status")
             } else {
+                val status = PlanStepStatus.fromWire(rawStatus)
                 ledger.updateStep(id, status, JsonArgs.str(args, "note"))
-                buildJsonObject { put("ok", true); put("id", id); put("status", status) }
+                buildJsonObject { put("ok", true); put("id", id); put("status", status.wire) }
             }
         }
         "memory_remember" -> {
@@ -993,13 +1114,49 @@ class AgentRuntime @Inject constructor(
         }
     }
 
+    /** Builds a structured report from the live ledger/evidence, never from model prose. */
+    private fun buildReport(
+        outcome: String?,
+        steps: Int,
+        answer: String?,
+        error: String?,
+        status: String? = null,
+    ): RunReport {
+        val state = _state.value
+        val ledgerState = activeLedger?.state
+        val items = evidence.snapshot()
+        return RunReport.from(
+            sessionId = state.sessionId,
+            goal = state.goal,
+            entryMode = state.entryMode,
+            outcome = outcome,
+            status = status ?: state.status,
+            steps = steps,
+            startedAt = state.startedAt,
+            summary = answer,
+            error = error ?: state.error,
+            plan = ledgerState?.steps?.toList().orEmpty(),
+            facts = ledgerState?.facts?.map { "${it.key}: ${it.value}" }.orEmpty(),
+            deadEnds = ledgerState?.deadEnds?.toList().orEmpty(),
+            evidence = ReportEvidence(
+                toolSteps = steps,
+                mutations = items.count { it.kind == "mutation" && it.ok },
+                observations = items.count { it.kind == "observation" && it.ok },
+                verifiedMutation = evidence.hasVerifiedMutation(),
+            ),
+            routeHintUsed = routeHintUsed,
+        )
+    }
+
     private fun failEarly(message: String, outcome: String) {
+        val report = buildReport(outcome, _state.value.stepCount, null, message, status = "error")
         _state.value = _state.value.copy(
-            running = false,
-            status = "error",
+            phase = phaseAfter(RunEvent.Terminate(RunPhase.ERROR)),
             error = message,
             outcome = outcome,
             answer = null,
+            termination = report.termination,
+            report = report,
         )
         addTrace(TraceType.ERROR, message, ok = false)
     }

@@ -47,8 +47,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import com.aura.aura_ui.state.OnboardingStep
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aura.aura_ui.presentation.AuraViewModel
 import com.aura.aura_ui.presentation.openIntent
@@ -77,7 +78,7 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
     val permissions = rememberPermissions(vm)
     val verification by vm.verification.collectAsStateWithLifecycle()
     val notice by vm.notice.collectAsStateWithLifecycle()
-    val step = settings.onboardingStep.coerceIn(0, LAST_STEP)
+    val step = OnboardingStep.fromIndex(settings.onboardingStep.coerceIn(0, OnboardingStep.DONE.index))
 
     var consent by remember { mutableStateOf(false) }
     var name by remember(settings.userName) { mutableStateOf(settings.userName) }
@@ -85,20 +86,20 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
 
     val runtimeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
 
-    fun go(next: Int) = vm.setOnboardingStep(next.coerceIn(0, LAST_STEP))
+    fun go(next: Int) = vm.setOnboardingStep(next.coerceIn(0, OnboardingStep.DONE.index))
 
     // Permission steps advance themselves the moment the live check flips.
     LaunchedEffect(step, permissions, settings.wakeWordEnabled) {
         val granted = when (step) {
-            4 -> permissions.accessibility
-            5 -> permissions.overlay
-            6 -> permissions.notificationListener
-            7 -> permissions.microphone && permissions.notifications
+            OnboardingStep.ACCESSIBILITY -> permissions.accessibility
+            OnboardingStep.OVERLAY -> permissions.overlay
+            OnboardingStep.NOTIFICATIONS -> permissions.notificationListener
+            OnboardingStep.MICROPHONE -> permissions.microphone && permissions.notifications
             else -> false
         }
         if (granted) {
             delay(550)
-            go(step + 1)
+            go(step.next().index)
         }
     }
 
@@ -107,9 +108,9 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
             Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (step > 0) {
+            if (step != OnboardingStep.WELCOME) {
                 Box(
-                    Modifier.size(40.dp).clip(CircleShape).clickable { go(step - 1) },
+                    Modifier.size(40.dp).clip(CircleShape).clickable { go(step.previous().index) },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(Icons.Outlined.ArrowBack, contentDescription = "Back", tint = mono.textPrimary, modifier = Modifier.size(20.dp))
@@ -119,17 +120,17 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
             }
             Spacer(Modifier.weight(1f))
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                repeat(LAST_STEP + 1) { index ->
+                repeat(OnboardingStep.DONE.index + 1) { index ->
                     Box(
                         Modifier
-                            .size(width = if (index == step) 18.dp else 6.dp, height = 6.dp)
+                            .size(width = if (index == step.index) 18.dp else 6.dp, height = 6.dp)
                             .clip(CircleShape)
-                            .background(if (index <= step) mono.ink else mono.outline),
+                            .background(if (index <= step.index) mono.ink else mono.outline),
                     )
                 }
             }
             Spacer(Modifier.weight(1f))
-            Text("${step + 1}/10", style = MonoStyleSmall, color = mono.textSecondary)
+            Text("${step.index + 1}/10", style = MonoStyleSmall, color = mono.textSecondary)
             Spacer(Modifier.size(40.dp))
         }
 
@@ -140,7 +141,7 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
                 .padding(horizontal = 24.dp),
         ) {
             when (step) {
-                0 -> {
+                OnboardingStep.WELCOME -> {
                     Spacer(Modifier.height(40.dp))
                     Text("AURA", style = androidx.compose.material3.MaterialTheme.typography.displayLarge, color = mono.textPrimary)
                     Spacer(Modifier.height(10.dp))
@@ -163,7 +164,7 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
                     }
                 }
 
-                1 -> {
+                OnboardingStep.DEAL -> {
                     Spacer(Modifier.height(24.dp))
                     StepTitle("How AURA works", "Read the deal before you start.")
                     Spacer(Modifier.height(16.dp))
@@ -190,7 +191,7 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
                     }
                 }
 
-                2 -> {
+                OnboardingStep.NAME -> {
                     Spacer(Modifier.height(24.dp))
                     StepTitle("Profile and provider", "Your name, and the model key that powers AURA.")
                     Spacer(Modifier.height(16.dp))
@@ -244,7 +245,7 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
                     }
                 }
 
-                3 -> {
+                OnboardingStep.BRAIN -> {
                     Spacer(Modifier.height(24.dp))
                     StepTitle("A note on Android 13+", "Sideloaded apps may need one extra tap.")
                     Spacer(Modifier.height(16.dp))
@@ -297,7 +298,7 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
                     footnote = "Skip if you never want notification tools.",
                 )
 
-                7 -> {
+                OnboardingStep.MICROPHONE -> {
                     Spacer(Modifier.height(24.dp))
                     StepTitle("Microphone and notifications", "Voice and run status.")
                     Spacer(Modifier.height(16.dp))
@@ -322,7 +323,7 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
                     }
                 }
 
-                8 -> {
+                OnboardingStep.VOICE -> {
                     Spacer(Modifier.height(24.dp))
                     StepTitle("Verify the key", "One live call to the provider you selected.")
                     Spacer(Modifier.height(16.dp))
@@ -366,7 +367,7 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
                     }
                 }
 
-                9 -> {
+                OnboardingStep.DONE -> {
                     Spacer(Modifier.height(24.dp))
                     StepTitle("Ready", "AURA stays out of the way until you ask.")
                     Spacer(Modifier.height(16.dp))
@@ -398,25 +399,25 @@ fun OnboardingScreen(vm: AuraViewModel, onFinished: () -> Unit) {
 
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             val canAdvance = when (step) {
-                1 -> consent
-                2 -> settings.userName.isNotBlank() && vm.hasKey(vm.currentEndpoint())
-                8 -> verification?.ok == true
+                OnboardingStep.DEAL -> consent
+                OnboardingStep.NAME -> settings.userName.isNotBlank() && vm.hasKey(vm.currentEndpoint())
+                OnboardingStep.VOICE -> verification?.ok == true
                 else -> true
             }
             InkButton(
-                label = if (step == LAST_STEP) "Enter AURA" else "Continue",
+                label = if (step == OnboardingStep.DONE) "Enter AURA" else "Continue",
                 onClick = {
-                    if (step == LAST_STEP) {
+                    if (step == OnboardingStep.DONE) {
                         vm.completeOnboarding()
                         onFinished()
                     } else {
-                        go(step + 1)
+                        go(step.next().index)
                     }
                 },
                 enabled = canAdvance,
-                leading = if (step == LAST_STEP) Icons.Outlined.Check else Icons.Outlined.ArrowForward,
+                leading = if (step == OnboardingStep.DONE) Icons.Outlined.Check else Icons.Outlined.ArrowForward,
             )
-            if (step in 3..7) {
+            if (step.index in 3..7) {
                 Spacer(Modifier.height(8.dp))
                 GhostButton("Skip for now", { go(step + 1) }, modifier = Modifier.align(Alignment.CenterHorizontally))
             }

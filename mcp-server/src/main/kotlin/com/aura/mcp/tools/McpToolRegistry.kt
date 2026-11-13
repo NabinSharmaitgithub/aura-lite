@@ -87,7 +87,7 @@ class McpToolRegistry(
             ?: return ToolResult.fail(ToolError.notFound("Unknown tool: $name"))
 
         // Scope/principal checks
-        principal.allowedTools?.let { if (name !in it) return fail(name, args, started, ToolError.scopeDenied("Tool $name is not allowed for this client")) }
+        principal.allowedTools?.let { if (name !in it) return fail(name, args, started, ToolError.scopeDenied("Tool $name is not allowed for this client"), stage = ToolStage.SCOPE_CHECKED) }
         // When an explicit tool allowlist is present it is authoritative (it may span toolsets).
         // Otherwise enforce the toolsets the client was granted.
         if (principal.allowedTools == null) {
@@ -99,17 +99,18 @@ class McpToolRegistry(
                         args,
                         started,
                         ToolError.scopeDenied("Toolset $toolset is not allowed for this client"),
+                        stage = ToolStage.SCOPE_CHECKED,
                     )
                 }
             }
         }
 
-        emit { onToolPhase?.invoke(name, "start", mapOf("client" to principal.clientId)) }
+        emit { onToolPhase?.invoke(name, "start", mapOf("client" to principal.clientId, "stage" to ToolStage.RECEIVED.wire)) }
         emit { onSession?.invoke("tool_call", mapOf("tool" to name, "mutating" to definition.mutating)) }
 
         // Human pause precedence
         if (hooks?.isPaused() == true && definition.mutating) {
-            return fail(name, args, started, ToolError.paused("Paused by user; retry after resume"))
+            return fail(name, args, started, ToolError.paused("Paused by user; retry after resume"), stage = ToolStage.PAUSED)
         }
 
         // Batch execution is itself scope/pause checked; each nested tool re-enters this pipeline.
@@ -122,19 +123,20 @@ class McpToolRegistry(
         // Sensitive policy (fail-closed)
         val policy = SensitivePolicy.evaluate(name, args, foreground)
         if (!policy.allowed) {
-            return fail(name, args, started, ToolError.policyBlocked(policy.reason ?: "Blocked by policy"), blocked = true)
+            return fail(name, args, started, ToolError.policyBlocked(policy.reason ?: "Blocked by policy"), blocked = true, stage = ToolStage.POLICY_BLOCKED)
         }
 
         // Restricted app / foreground protection for mutating/perception-sensitive tools
         val fgGuard = ForegroundGuard.evaluate(foreground, name, definition)
         if (!fgGuard.allowed) {
-            return fail(name, args, started, ToolError.policyBlocked(fgGuard.reason ?: "Blocked by foreground guard"), blocked = true)
+            return fail(name, args, started, ToolError.policyBlocked(fgGuard.reason ?: "Blocked by foreground guard"), blocked = true, stage = ToolStage.FOREGROUND_BLOCKED)
         }
         if (definition.mutating) {
             if (foreground != null && (restrictedApps.isBlocked(foreground) || SensitivePolicy.isSensitivePackage(foreground))) {
-                return fail(name, args, started, ToolError.blocked(foreground), blocked = true)
+                return fail(name, args, started, ToolError.blocked(foreground), blocked = true, stage = ToolStage.FOREGROUND_BLOCKED)
             }
             if (definition.risky && approvalGate != null) {
+                emit { onToolPhase?.invoke(name, "approval_requested", mapOf("stage" to ToolStage.APPROVAL_PENDING.wire)) }
                 val approved = approvalGate.approve(
                     ApprovalRequest(
                         tool = name,
@@ -150,6 +152,7 @@ class McpToolRegistry(
                         started,
                         ToolError(ToolError.APPROVAL_DENIED, "The user declined this action."),
                         blocked = true,
+                        stage = ToolStage.APPROVAL_DENIED,
                     )
                 }
             }
@@ -166,6 +169,7 @@ class McpToolRegistry(
                     started,
                     ToolError.policyBlocked(sight.reason ?: "Possible OTP/verification code blocked"),
                     blocked = true,
+                    stage = ToolStage.OTP_BLOCKED,
                 )
             }
         }
@@ -173,13 +177,16 @@ class McpToolRegistry(
         // Action guard (grounding/staleness/basic misuse)
         val guard = actionGuard.evaluate(name, args)
         if (!guard.allowed) {
-            return fail(name, args, started, ToolError.actionGuard(guard.reason ?: "Action blocked by guard"), blocked = true)
+            return fail(name, args, started, ToolError.actionGuard(guard.reason ?: "Action blocked by guard"), blocked = true, stage = ToolStage.GUARD_BLOCKED)
         }
 
-        val result = runCatching { bridge.execute(name, args) }
+        emit { onToolPhase?.invoke(name, "executing", mapOf("stage" to ToolStage.EXECUTING.wire)) }
+
+        var result = runCatching { bridge.execute(name, args) }
             .getOrElse { throwable ->
                 ToolResult.fail(ToolError.internal(throwable.message ?: "Tool crashed"))
             }
+        result = result.copy(stage = if (result.ok) ToolStage.DONE else ToolStage.FAILED)
 
         if (definition.mutating && result.ok) {
             hooks?.invalidatePerceptionOnMutation(name)
@@ -222,24 +229,31 @@ class McpToolRegistry(
         return result
     }
 
-    private fun fail(name: String, args: JsonObject, started: Long, error: ToolError, blocked: Boolean = false): ToolResult {
+    private fun fail(
+        name: String,
+        args: JsonObject,
+        started: Long,
+        error: ToolError,
+        blocked: Boolean = false,
+        stage: ToolStage = ToolStage.FAILED,
+    ): ToolResult {
         audit?.record(principal.clientId, name, args, false, System.currentTimeMillis() - started, blocked = blocked)
         emit {
             onToolPhase?.invoke(
                 name,
                 if (blocked) "blocked" else "failed",
-                mapOf("code" to error.code, "message" to error.message),
+                mapOf("code" to error.code, "message" to error.message, "stage" to stage.wire),
             )
         }
-        emit { onTrail?.invoke("tool_error", mapOf("tool" to name, "code" to error.code, "blocked" to blocked)) }
-        return ToolResult.fail(error)
+        emit { onTrail?.invoke("tool_error", mapOf("tool" to name, "code" to error.code, "blocked" to blocked, "stage" to stage.wire)) }
+        return ToolResult.fail(error, stage = stage)
     }
 
     private suspend fun executeBatch(args: JsonObject, started: Long): ToolResult {
         val steps = args["steps"] as? JsonArray
-            ?: return ToolResult.fail(ToolError("invalid_args", "steps must be an array"))
+            ?: return ToolResult.fail(ToolError("invalid_args", "steps must be an array"), stage = ToolStage.FAILED)
         if (steps.size > maxBatchSteps) {
-            return ToolResult.fail(ToolError("invalid_args", "Batch exceeds $maxBatchSteps steps"))
+            return ToolResult.fail(ToolError("invalid_args", "Batch exceeds $maxBatchSteps steps"), stage = ToolStage.FAILED)
         }
         val results = buildJsonArray {
             steps.forEachIndexed { i, element ->
@@ -274,7 +288,7 @@ class McpToolRegistry(
             changed = true,
             observed = buildJsonObject { put("steps", results); put("count", steps.size) },
             meta = buildJsonObject { put("duration_ms", System.currentTimeMillis() - started) },
-        ).let { if (allOk) it else it.copy(ok = false) }
+        ).let { if (allOk) it else it.copy(ok = false, stage = ToolStage.FAILED) }
     }
 
     /** Direct registry used by tests without approval latency. */

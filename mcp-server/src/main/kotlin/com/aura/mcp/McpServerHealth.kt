@@ -12,11 +12,13 @@ data class McpServerHealth(
     val clientCount: Int = 0,
     val startedAt: Long = 0L,
     val lastError: String? = null,
+    val state: String = "stopped",
 ) {
     val uptimeMs: Long get() = if (startedAt == 0L) 0 else System.currentTimeMillis() - startedAt
 
     fun toJson(): JsonObject = buildJsonObject {
         put("status", if (running) "ok" else "stopped")
+        put("state", state)
         put("version", com.aura.mcp.BuildConfig.VERSION_NAME)
         put("tools", toolCount)
         put("clients", clientCount)

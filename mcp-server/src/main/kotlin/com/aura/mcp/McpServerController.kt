@@ -65,11 +65,20 @@ class McpServerController @Inject constructor(
     )
     val health: StateFlow<McpServerHealth> = _health.asStateFlow()
 
-    val isRunning: Boolean get() = server != null || webRtcTransport != null
+    @Volatile private var serverState: McpServerState = McpServerState.STOPPED
+    private val stateLock = Any()
+
+    /** Canonical server lifecycle state. */
+    val state: McpServerState get() = serverState
+
+    val isRunning: Boolean get() = serverState.isRunning
     val webRtcPin: String? get() = runCatching { /* exposed via status */ null }.getOrNull()
 
     fun start(port: Int = DEFAULT_PORT): McpServerHealth {
-        if (server != null) return _health.value
+        synchronized(stateLock) {
+            if (serverState.isRunning || serverState == McpServerState.STARTING) return _health.value
+            serverState = McpServerState.STARTING
+        }
         return runCatching {
             val id = identity ?: ServerIdentity.generate().also { identity = it }
             val instance = HttpMcpServer(
@@ -84,6 +93,7 @@ class McpServerController @Inject constructor(
             server = instance
             boundPort = instance.port
             mdns.advertise("AURA-${android.os.Build.MODEL}".replace(" ", "-"), boundPort)
+            serverState = if (webRtcTransport != null) McpServerState.RUNNING_BOTH else McpServerState.RUNNING_HTTP
             McpServerHealth(
                 running = true,
                 host = localIpv4() ?: "0.0.0.0",
@@ -91,28 +101,45 @@ class McpServerController @Inject constructor(
                 toolCount = ToolCatalog.all.size,
                 clientCount = trustedDevices.list().size,
                 startedAt = System.currentTimeMillis(),
+                state = serverState.wire,
             ).also { _health.value = it }
         }.getOrElse { error ->
+            serverState = if (webRtcTransport != null) McpServerState.RUNNING_WEBRTC else McpServerState.ERROR
             McpServerHealth(
-                running = false,
+                running = serverState.isRunning,
                 toolCount = ToolCatalog.all.size,
                 clientCount = trustedDevices.list().size,
                 lastError = error.message,
+                state = serverState.wire,
             ).also { _health.value = it }
         }
     }
 
     fun stop() {
+        synchronized(stateLock) {
+            if (serverState != McpServerState.STOPPED) serverState = McpServerState.STOPPING
+        }
         runCatching { server?.stop() }
         server = null
         mdns.stop()
-        stopWebRtc()
-        _health.value = _health.value.copy(running = false, port = 0)
+        stopWebRtcLocked()
+        synchronized(stateLock) { serverState = McpServerState.STOPPED }
+        _health.value = _health.value.copy(running = false, port = 0, state = McpServerState.STOPPED.wire)
     }
 
     /** Starts WebRTC LAN MCP transport compatible with aura-mcp-connect signaling/pairing. */
     fun startWebRtc(): String? {
-        if (webRtcTransport != null) return null
+        val httpRunning: Boolean
+        synchronized(stateLock) {
+            if (serverState == McpServerState.RUNNING_WEBRTC ||
+                serverState == McpServerState.RUNNING_BOTH ||
+                serverState == McpServerState.STARTING
+            ) {
+                return null
+            }
+            httpRunning = server != null
+            serverState = McpServerState.STARTING
+        }
         return runCatching {
             val transport = WebRtcTransport(context, trustedClients = webRtcTrustedClients)
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -124,12 +151,16 @@ class McpServerController @Inject constructor(
                     port = status.port,
                     clientCount = webRtcTrustedClients.clients.value.size,
                     toolCount = ToolCatalog.all.size,
+                    state = serverState.wire,
                 )
             }
             val status = transport.startListening()
             webRtcTransport = transport
             webRtcBridge = bridge
             webRtcScope = scope
+            synchronized(stateLock) {
+                serverState = if (httpRunning) McpServerState.RUNNING_BOTH else McpServerState.RUNNING_WEBRTC
+            }
             _health.value = McpServerHealth(
                 running = true,
                 host = status.addresses.firstOrNull() ?: "LAN",
@@ -137,17 +168,33 @@ class McpServerController @Inject constructor(
                 toolCount = ToolCatalog.all.size,
                 clientCount = webRtcTrustedClients.clients.value.size,
                 startedAt = System.currentTimeMillis(),
+                state = serverState.wire,
             )
             Log.i("McpServerController", "WebRTC MCP listening on ${status.port}, pin=${status.pin}")
             status.pin
         }.getOrElse { e ->
             Log.w("McpServerController", "Failed to start WebRTC MCP", e)
-            _health.value = _health.value.copy(running = false, lastError = e.message)
+            synchronized(stateLock) {
+                serverState = if (httpRunning) McpServerState.RUNNING_HTTP else McpServerState.ERROR
+            }
+            _health.value = _health.value.copy(
+                running = httpRunning,
+                lastError = e.message,
+                state = serverState.wire,
+            )
             null
         }
     }
 
     fun stopWebRtc() {
+        stopWebRtcLocked()
+        synchronized(stateLock) {
+            serverState = if (server != null) McpServerState.RUNNING_HTTP else McpServerState.STOPPED
+        }
+        _health.value = _health.value.copy(state = serverState.wire)
+    }
+
+    private fun stopWebRtcLocked() {
         runCatching { webRtcBridge?.close() }
         runCatching { webRtcTransport?.close() }
         runCatching { webRtcScope?.cancel() }

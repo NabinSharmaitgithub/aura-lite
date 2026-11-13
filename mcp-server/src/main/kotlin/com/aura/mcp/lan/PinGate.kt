@@ -4,6 +4,10 @@ import java.security.MessageDigest
 
 /**
  * The pairing PIN shown in MCP Center, with single use and a lockout against guessing.
+ *
+ * The gate is a two-state machine ([PinGateState.Active] / [PinGateState.Locked]). A locked
+ * state always carries a deadline and an escalation level, and the level survives expiry so a
+ * repeated attacker cannot reset the backoff by waiting out the first lock.
  */
 class PinGate(
     private val newPin: () -> String,
@@ -19,35 +23,45 @@ class PinGate(
 
     private val lock = Any()
     private var current: String = newPin()
-    private var failures = 0
-    private var lockLevel = 0
-    private var lockedUntil = 0L
+    private var gateState: PinGateState = PinGateState.Active()
 
     val pin: String get() = synchronized(lock) { current }
+
+    /** Immutable diagnostics snapshot. */
+    fun state(): PinGateState = synchronized(lock) { gateState }
 
     fun tryPin(candidate: String): Result {
         val result: Result
         val changed: String?
         synchronized(lock) {
             val now = clock()
-            if (now < lockedUntil) return Result.Locked(lockedUntil - now)
+            var state = gateState
+            if (state is PinGateState.Locked) {
+                if (now < state.until) return Result.Locked(state.until - now)
+                // Lock expired: keep the escalation level, clear the failure count.
+                state = PinGateState.Active(failures = 0, level = state.level)
+                gateState = state
+            }
+            val active = state as PinGateState.Active
             if (MessageDigest.isEqual(candidate.toByteArray(), current.toByteArray())) {
-                failures = 0
-                lockLevel = 0
+                gateState = PinGateState.Active()
                 current = newPin()
                 result = Result.Accepted
                 changed = current
-            } else if (++failures >= MAX_FAILURES) {
-                failures = 0
-                lockLevel++
-                val lockMs = (BASE_LOCK_MS shl (lockLevel - 1).coerceAtMost(10)).coerceAtMost(MAX_LOCK_MS)
-                lockedUntil = now + lockMs
-                current = newPin()
-                result = Result.Locked(lockMs)
-                changed = current
             } else {
-                result = Result.Wrong(MAX_FAILURES - failures)
-                changed = null
+                val failures = active.failures + 1
+                if (failures >= MAX_FAILURES) {
+                    val level = active.level + 1
+                    val lockMs = (BASE_LOCK_MS shl (level - 1).coerceAtMost(10)).coerceAtMost(MAX_LOCK_MS)
+                    gateState = PinGateState.Locked(until = now + lockMs, level = level)
+                    current = newPin()
+                    result = Result.Locked(lockMs)
+                    changed = current
+                } else {
+                    gateState = PinGateState.Active(failures = failures, level = active.level)
+                    result = Result.Wrong(MAX_FAILURES - failures)
+                    changed = null
+                }
             }
         }
         changed?.let { onPinChanged?.invoke(it) }

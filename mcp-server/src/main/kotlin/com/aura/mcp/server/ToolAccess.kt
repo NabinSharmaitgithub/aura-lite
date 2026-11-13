@@ -10,7 +10,7 @@ object ToolAccess {
         "read_screen", "perceive_screen", "get_screenshot", "request_screen_capture_permission",
         "tap", "swipe", "scroll", "set_value", "type_text", "press_key", "press_enter",
         "wait_for", "verify_action", "run_steps", "launch_app", "lookup_app",
-        "open_deeplink", "resolve_deeplink", "list_app_deeplinks", "get_device_status",
+        "install_app", "open_deeplink", "resolve_deeplink", "list_app_deeplinks", "get_device_status",
         "end_session", "ask_user",
     )
     private val assistant = core + ToolCatalog.all.filter {

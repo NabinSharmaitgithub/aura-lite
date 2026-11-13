@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.view.View
+import com.aura.aura_ui.state.PillState
 import com.aura.aura_ui.ui.theme.MonoArgb
 
 /**
@@ -31,8 +32,7 @@ class OverlayPillView(context: Context) : View(context) {
     }
     private val rect = RectF()
 
-    private var listening = false
-    private var speaking = false
+    private var state: PillState = PillState.IDLE
     private var status = "Tap to talk"
     private var transcript = ""
 
@@ -48,9 +48,8 @@ class OverlayPillView(context: Context) : View(context) {
         setBackgroundColor(Color.TRANSPARENT)
     }
 
-    fun update(listening: Boolean, speaking: Boolean, status: String, transcript: String) {
-        this.listening = listening
-        this.speaking = speaking
+    fun update(state: PillState, status: String, transcript: String) {
+        this.state = state
         this.status = status
         this.transcript = transcript
         invalidate()
@@ -72,10 +71,10 @@ class OverlayPillView(context: Context) : View(context) {
 
         val centerY = height / 2f
         val dotX = 42f * resources.displayMetrics.density
-        dot.color = when {
-            listening -> MonoArgb.blood
-            speaking -> MonoArgb.textOnInk
-            else -> MonoArgb.textOnInkDim
+        dot.color = when (state) {
+            PillState.LISTENING -> MonoArgb.blood
+            PillState.SPEAKING -> MonoArgb.textOnInk
+            PillState.IDLE -> MonoArgb.textOnInkDim
         }
         canvas.drawCircle(dotX, centerY - 10f, 7f * resources.displayMetrics.density, dot)
 

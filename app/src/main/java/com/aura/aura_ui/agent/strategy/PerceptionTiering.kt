@@ -4,6 +4,9 @@ package com.aura.aura_ui.agent.strategy
 object PerceptionTiering {
     enum class Tier { TREE_ONLY, FULL }
 
+    /** Canonical last-decided tier; persisted for diagnostics and resume decisions. */
+    @Volatile var currentTier: Tier = Tier.TREE_ONLY
+
     data class Signals(
         val interactiveNodes: Int = 0,
         val labeledNodes: Int = 0,
@@ -24,5 +27,12 @@ object PerceptionTiering {
         if (s.lastFailureCount >= 2) return Decision(Tier.FULL, "repeated action failures on current screen")
         if (s.screenChanged) return Decision(Tier.TREE_ONLY, "tree-only after settled change")
         return Decision(Tier.TREE_ONLY, "structural tree sufficient")
+    }
+
+    /** Decide and record the result as the canonical current tier. */
+    fun decideAndRecord(s: Signals): Decision {
+        val d = decide(s)
+        currentTier = d.tier
+        return d
     }
 }

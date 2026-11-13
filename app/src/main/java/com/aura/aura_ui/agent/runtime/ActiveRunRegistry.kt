@@ -1,5 +1,6 @@
 package com.aura.aura_ui.agent.runtime
 
+import com.aura.aura_ui.state.RunHandleState
 import java.util.concurrent.ConcurrentHashMap
 
 /** Tracks active/steerable runs and their control handles (pause/cancel/status). */
@@ -7,11 +8,14 @@ object ActiveRunRegistry {
     data class RunHandle(
         val id: String,
         val goal: String,
-        @Volatile var status: String = "running",
-        @Volatile var paused: Boolean = false,
-        @Volatile var cancelled: Boolean = false,
+        @Volatile var state: RunHandleState = RunHandleState.RUNNING,
         val startedAt: Long = System.currentTimeMillis(),
-    )
+    ) {
+        val status: String get() = state.wire
+        val paused: Boolean get() = state == RunHandleState.PAUSED
+        val cancelled: Boolean get() = state == RunHandleState.CANCELLING
+        val finished: Boolean get() = state == RunHandleState.FINISHED
+    }
 
     private val runs = ConcurrentHashMap<String, RunHandle>()
     @Volatile var currentRunId: String? = null
@@ -27,17 +31,29 @@ object ActiveRunRegistry {
     fun get(id: String): RunHandle? = runs[id]
     fun current(): RunHandle? = currentRunId?.let { runs[it] }
 
-    fun update(id: String, status: String? = null, paused: Boolean? = null, cancelled: Boolean? = null) {
+    fun update(
+        id: String,
+        status: String? = null,
+        paused: Boolean? = null,
+        cancelled: Boolean? = null,
+        state: RunHandleState? = null,
+    ) {
         runs[id]?.let { h ->
-            status?.let { h.status = it }
-            paused?.let { h.paused = it }
-            cancelled?.let { h.cancelled = it }
+            h.state = state ?: when {
+                cancelled == true -> RunHandleState.CANCELLING
+                paused == true -> RunHandleState.PAUSED
+                paused == false -> RunHandleState.RUNNING
+                status != null -> RunHandleState.entries.firstOrNull { it.wire == status } ?: h.state
+                else -> h.state
+            }
         }
     }
 
     fun finish(id: String) {
+        val h = runs[id] ?: return
+        h.state = RunHandleState.FINISHED
         runs.remove(id)
-        if (currentRunId == id) currentRunId = runs.keys.firstOrNull()
+        if (currentRunId == id) currentRunId = null
     }
 
     fun snapshot(): List<RunHandle> = runs.values.toList()

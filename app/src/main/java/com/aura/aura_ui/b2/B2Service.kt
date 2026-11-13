@@ -2,9 +2,13 @@ package com.aura.aura_ui.b2
 
 import android.content.Context
 import com.aura.aura_ui.data.prefs.AuraSettings
+import com.aura.aura_ui.state.BackupState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -23,6 +27,10 @@ class B2Service @Inject constructor(
     private val settings: AuraSettings,
     private val client: B2Client,
 ) {
+    private val _backupState = MutableStateFlow(BackupState.IDLE)
+    /** Explicit remote-backup lifecycle for UI/diagnostics. */
+    val backupState: StateFlow<BackupState> = _backupState.asStateFlow()
+
     fun isConfigured(): Boolean = client.config() != null
 
     fun configuredHint(): String =
@@ -70,16 +78,28 @@ class B2Service @Inject constructor(
 
     /** Backs up every screenshot in the session's screens/ directory; returns how many uploaded. */
     suspend fun backupSession(sessionId: String): Result<Int> = withContext(Dispatchers.IO) {
-        if (!settings.b2SessionBackupEnabled || !isConfigured()) return@withContext Result.success(0)
-        val dir = File(context.filesDir, "sessions/$sessionId/screens")
-        if (!dir.isDirectory) return@withContext Result.success(0)
-        var uploaded = 0
-        dir.listFiles()?.filter { it.isFile && it.extension.equals("png", ignoreCase = true) }?.forEach { shot ->
-            val key = "users/sessions/$sessionId/screens/${shot.name}"
-            val result = runCatching { client.upload(key, shot.readBytes(), "image/png") }.getOrNull()
-            if (result?.isSuccess == true) uploaded += 1
+        if (!settings.b2SessionBackupEnabled || !isConfigured()) {
+            _backupState.value = BackupState.SKIPPED
+            return@withContext Result.success(0)
         }
-        Result.success(uploaded)
+        val dir = File(context.filesDir, "sessions/$sessionId/screens")
+        if (!dir.isDirectory) {
+            _backupState.value = BackupState.SKIPPED
+            return@withContext Result.success(0)
+        }
+        _backupState.value = BackupState.UPLOADING
+        runCatching {
+            var uploaded = 0
+            dir.listFiles()?.filter { it.isFile && it.extension.equals("png", ignoreCase = true) }?.forEach { shot ->
+                val key = "users/sessions/$sessionId/screens/${shot.name}"
+                val result = runCatching { client.upload(key, shot.readBytes(), "image/png") }.getOrNull()
+                if (result?.isSuccess == true) uploaded += 1
+            }
+            _backupState.value = BackupState.UPLOADED
+            uploaded
+        }.onFailure {
+            _backupState.value = BackupState.FAILED
+        }
     }
 
     /** Zips the whole session directory and uploads it as exports/<id>-<timestamp>.zip. */

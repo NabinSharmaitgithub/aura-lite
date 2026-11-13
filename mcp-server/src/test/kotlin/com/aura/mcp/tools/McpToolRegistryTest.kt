@@ -4,6 +4,7 @@ import com.aura.mcp.bridge.DeviceBridge
 import com.aura.mcp.bridge.RestrictedAppsStore
 import com.aura.mcp.bridge.ToolError
 import com.aura.mcp.bridge.ToolResult
+import com.aura.mcp.server.ToolAccess
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -99,6 +100,30 @@ class McpToolRegistryTest {
         val result = registry.execute("compose_sms", buildJsonObject { })
         assertTrue(result.ok)
         assertEquals(listOf("compose_sms"), bridge.executed)
+    }
+
+    @Test
+    fun `install_app is risky and approval gated before dispatch`() = runBlocking {
+        val bridge = FakeBridge()
+        val registry = McpToolRegistry(bridge)
+        val result = registry.execute("install_app", buildJsonObject { put("app_name", "Free Fire") })
+        assertTrue(result.ok)
+        assertEquals(listOf("install_app"), bridge.executed)
+
+        val gated = McpToolRegistry(bridge, approvalGate = { _ -> false })
+        val denied = gated.execute("install_app", buildJsonObject { put("app_name", "Free Fire") })
+        assertFalse(denied.ok)
+        assertEquals(ToolError.APPROVAL_DENIED, denied.error?.code)
+        assertEquals(1, bridge.executed.size)
+    }
+
+    @Test
+    fun `install_app is allowed under the core toolset scope`() = runBlocking {
+        val bridge = FakeBridge()
+        val registry = McpToolRegistry(bridge).withPrincipal(ToolAccess.principalFor("client-1", listOf("CORE")))
+        val result = registry.execute("install_app", buildJsonObject { put("app_name", "Free Fire") })
+        assertTrue(result.ok)
+        assertEquals(listOf("install_app"), bridge.executed)
     }
 
     @Test

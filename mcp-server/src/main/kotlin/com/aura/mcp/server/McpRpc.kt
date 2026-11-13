@@ -24,8 +24,8 @@ object McpRpc {
     /** Connect-time instructions clients receive from `initialize`. */
     const val INSTRUCTIONS =
         "AURA is an on-device agent for Android. It reads the screen with an accessibility service,\n" +
-            "taps, swipes, types and fills forms, drives a real in-app browser, and can launch apps with\n" +
-            "deep links when possible. Prefer perceive-first: never guess a locator without reading the\n" +
+            "taps, swipes, types and fills forms, drives a real in-app browser, and can launch apps or open\n" +
+            "install listings with deep links when possible. Prefer perceive-first: never guess a locator without reading the\n" +
             "screen first. Prefer deep links over multi-step UI flows. Verify after every mutating step:\n" +
             "re-read the screen before acting again. Refuse to act when the goal is ambiguous — ask_user.\n" +
             "Safety policy:\n" +
@@ -86,7 +86,12 @@ object McpRpc {
             "8. Use `ask_user` when the goal is ambiguous or the screen makes no sense; never guess.\n" +
             "9. Browser tasks (research, forms) belong in `browser_*`, which understands pages; apps may block\n" +
             "   webviews, so open links in the AURA browser instead of the app's built-in one.\n" +
-            "10. End every session with `end_session(outcome=…, summary=…)` — the report the user reads."
+            "10. End every session with `end_session(outcome=…, summary=…)` — the report the user reads.\n" +
+            "11. To install an app that is not installed yet, call `install_app` with the app name or package; it opens the Google Play Store listing where the install step happens.\n" +
+            "    Then read the screen and tap the Install action when it is visible.\n" +
+            "12. To search inside a music or video app (e.g. YouTube for a song), prefer `browser_open` with the\n" +
+            "    app's search URL (e.g. https://www.youtube.com/results?search_query=<term>); if the app UI must be\n" +
+            "    driven instead, launch the app, read_screen, tap the search affordance, type_text the query and submit."
 
     // ──────────────────────────────────────────────────────────────────────
     // RPC envelopes (shared by both transports)
