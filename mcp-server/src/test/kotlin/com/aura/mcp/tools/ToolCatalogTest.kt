@@ -83,8 +83,8 @@ class ToolCatalogTest {
         assertTrue(def.risky)
         val properties = def.inputSchema["properties"]?.jsonObject
         assertNotNull(properties)
-        assertTrue(properties.containsKey("app_name"))
-        assertTrue(properties.containsKey("package"))
+        assertTrue(properties?.containsKey("app_name") == true)
+        assertTrue(properties?.containsKey("package") == true)
     }
 
     private fun summary(list: List<String>, needle: String): Boolean = needle in list
