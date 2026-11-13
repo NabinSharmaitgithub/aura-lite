@@ -1,4 +1,4 @@
-name: Android Build, Report and Release
+name: Android Build, Test and Release
 
 on:
   push:
@@ -8,11 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Publish a GitHub release with the built APKs"
+        description: "Publish a GitHub release with built artifacts"
         type: boolean
         default: false
       release_tag:
-        description: "Release tag (leave empty to use v<versionName>)"
+        description: "Release tag (leave empty to auto-generate)"
         type: string
         required: false
       release_name:
@@ -33,32 +33,33 @@ permissions:
   actions: read
 
 env:
-  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8"
-  # The ubuntu-latest image already ships the Android SDK; the old setup-android action now
-  # fails because the legacy "tools" package was removed from the repository.
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
   ANDROID_HOME: /usr/local/lib/android/sdk
   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-  # Optional production signing. Set these repository secrets to publish upgrade-compatible APKs;
-  # without them the release build is signed with the debug key so it still installs.
+  # Optional production signing. Without these secrets the release build is signed with the debug key.
   AURA_KEYSTORE_BASE64: ${{ secrets.AURA_KEYSTORE_BASE64 }}
   AURA_KEYSTORE_PASSWORD: ${{ secrets.AURA_KEYSTORE_PASSWORD }}
   AURA_KEY_ALIAS: ${{ secrets.AURA_KEY_ALIAS }}
   AURA_KEY_PASSWORD: ${{ secrets.AURA_KEY_PASSWORD }}
-  # Optional: a base64-encoded app/google-services.json. Without it the build is offline-only
-  # (the Google Services/Crashlytics Gradle plugins are not applied).
+  # Optional: base64-encoded app/google-services.json. Without it Firebase plugins stay disabled.
   GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+  SHERPA_AAR_URL: https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.28/sherpa-onnx-static-link-onnxruntime-1.12.28.aar
+  SHERPA_AAR_PATH: app/libs/sherpa-onnx-static-link-onnxruntime-1.12.28.aar
 
 jobs:
   build:
-    name: Build, report and release
+    name: Build, test and release
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -80,34 +81,36 @@ jobs:
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "build-tools: $(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.11.1"
-          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
 
-      - name: Run unit tests
-        shell: bash
-        run: |
-          set -o pipefail
-          mkdir -p build-report
-          gradle :app:testDebugUnitTest :mcp-server:test --stacktrace --no-daemon 2>&1 | tee build-report/gradle-tests.log
-          if grep -qE '^FAILED' build-report/gradle-tests.log; then
-            echo "::error::Unit tests failed"
-            exit 1
-          fi
+      - name: Cache sherpa-onnx AAR
+        id: sherpa-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SHERPA_AAR_PATH }}
+          key: sherpa-onnx-aar-v1.12.28
 
-      - name: Reject committed secrets
+      - name: Download sherpa-onnx AAR
+        if: steps.sherpa-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          if git grep -nE '(gsk_[A-Za-z0-9]{20,}|sk-or-v1-|nvapi-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{30,}|tvly-[A-Za-z0-9]{20,})' -- \
-              ':!*.md' ':!app/src/main/assets/*' ':!.github/*' ; then
-            echo "::error::A provider key pattern was found in the repository."
-            exit 1
-          fi
+          mkdir -p app/libs
+          curl -fL --retry 3 --retry-delay 5 -o "$SHERPA_AAR_PATH" "$SHERPA_AAR_URL"
+          ls -lh "$SHERPA_AAR_PATH"
+
+      - name: Verify sherpa-onnx AAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$SHERPA_AAR_PATH"
+          ls -lh "$SHERPA_AAR_PATH"
 
       - name: Prepare optional release signing
         shell: bash
@@ -140,6 +143,19 @@ jobs:
             echo "google_services_json=absent" >> "$GITHUB_ENV"
           fi
 
+      - name: Reject committed secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE '(gsk_[A-Za-z0-9]{20,}|sk-or-v1-|nvapi-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{30,}|tvly-[A-Za-z0-9]{20,})' -- \
+              ':!*.md' ':!app/src/main/assets/*' ':!.github/*' ; then
+            echo "::error::A provider key pattern was found in the repository."
+            exit 1
+          fi
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
       - name: Resolve version
         id: version
         shell: bash
@@ -153,19 +169,33 @@ jobs:
           echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "Built version 1.0.$code (commit $count, sha $(git rev-parse --short HEAD))"
 
-      - name: Assemble debug
+      - name: Run unit tests
         shell: bash
         run: |
           set -o pipefail
           mkdir -p build-report
-          gradle :app:assembleDebug --stacktrace --no-daemon 2>&1 | tee build-report/gradle-debug.log
+          ./gradlew :app:testDebugUnitTest :mcp-server:test --stacktrace --no-daemon 2>&1 | tee build-report/gradle-tests.log
 
-      - name: Assemble release
+      - name: Assemble debug APK
         shell: bash
         run: |
           set -o pipefail
           mkdir -p build-report
-          gradle :app:assembleRelease --stacktrace --no-daemon 2>&1 | tee build-report/gradle-release.log
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon 2>&1 | tee build-report/gradle-debug.log
+
+      - name: Assemble release APK
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build-report
+          ./gradlew :app:assembleRelease --stacktrace --no-daemon 2>&1 | tee build-report/gradle-release.log
+
+      - name: Bundle release AAB
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build-report
+          ./gradlew :app:bundleRelease --stacktrace --no-daemon 2>&1 | tee build-report/gradle-bundle.log
 
       - name: Certificate fingerprints and checksums
         shell: bash
@@ -199,6 +229,13 @@ jobs:
               echo
             } >> "$out"
           done
+          for aab in app/build/outputs/bundle/release/*.aab; do
+            [ -f "$aab" ] || continue
+            echo "== $aab" >> "$out"
+            echo "size_bytes: $(stat -c%s "$aab")" >> "$out"
+            echo "sha256: $(sha256sum "$aab" | awk '{print $1}')" >> "$out"
+            echo >> "$out"
+          done
           cat "$out"
 
       - name: Verify APK signatures
@@ -210,10 +247,14 @@ jobs:
             echo "::error::apksigner not found in the Android SDK"
             exit 1
           fi
+          found=0
           for apk in app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk; do
+            [ -f "$apk" ] || continue
+            found=1
             echo "verifying $apk"
             "$APKSIGNER" verify --verbose "$apk" | sed 's/^/  /'
           done
+          [ "$found" -eq 1 ] || { echo "::error::No APKs found to verify"; exit 1; }
 
       - name: Build report
         if: always()
@@ -234,42 +275,36 @@ jobs:
             echo "| Release signing | \`${release_signing:-unknown}\` |"
             echo "| Firebase wiring | \`${google_services_json:-unknown}\` |"
             echo "| Java | \`$(java -version 2>&1 | head -1)\` |"
-            echo "| Gradle | \`$(gradle --version 2>/dev/null | grep '^Gradle ' | head -1)\` |"
+            echo "| Gradle wrapper | \`$(./gradlew --version 2>/dev/null | grep '^Gradle ' | head -1)\` |"
             echo "| Android SDK | \`compileSdk 36, build-tools $(ls "$ANDROID_HOME/build-tools" 2>/dev/null | sort -V | tail -1)\` |"
             echo
-            echo "## APKs"
+            echo "## Artifacts"
             echo
             found=0
-            for apk in app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk; do
-              [ -f "$apk" ] || continue
+            for f in app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab; do
+              [ -f "$f" ] || continue
               found=1
-              echo "- \`$apk\` — $(stat -c%s "$apk") bytes — sha256 \`$(sha256sum "$apk" | awk '{print $1}')\`"
+              echo "- \`$f\` — $(stat -c%s "$f") bytes — sha256 \`$(sha256sum "$f" | awk '{print $1}')\`"
             done
-            [ "$found" -eq 1 ] || echo "_No APK was produced. See the Gradle logs artifact._"
+            [ "$found" -eq 1 ] || echo "_No build artifacts were produced. See logs in the build report artifact._"
             echo
-            if [ -f build-report/certificates.txt ]; then
-              echo "## Certificates"
-              echo
-              echo '```'
-              cat build-report/certificates.txt
-              echo '```'
-              echo
-            fi
-            echo "## Gradle result"
+            echo "## Logs"
             echo
-            echo "- debug log: \`build-report/gradle-debug.log\`"
-            echo "- release log: \`build-report/gradle-release.log\`"
-            if grep -qE '^BUILD SUCCESSFUL' build-report/gradle-debug.log 2>/dev/null && \
-               grep -qE '^BUILD SUCCESSFUL' build-report/gradle-release.log 2>/dev/null; then
-              echo "- status: **BUILD SUCCESSFUL**"
-            else
-              echo "- status: **BUILD FAILED** — inspect the logs artifact and the failing step above."
-            fi
+            for f in gradle-tests.log gradle-debug.log gradle-release.log gradle-bundle.log; do
+              [ -f "build-report/$f" ] && echo "- \`build-report/$f\`"
+            done
+            echo
+            echo "## Status"
+            echo
+            ok=true
+            for f in gradle-tests.log gradle-debug.log gradle-release.log gradle-bundle.log; do
+              if [ -f "build-report/$f" ] && ! grep -q '^BUILD SUCCESSFUL' "build-report/$f"; then ok=false; fi
+            done
+            if $ok; then echo "**BUILD SUCCESSFUL**"; else echo "**BUILD FAILED** — inspect the logs and failing step above."; fi
           } > "$report"
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
-          cat "$report"
 
-      - name: Collect APKs
+      - name: Upload APKs
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -280,12 +315,27 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Collect build report
+      - name: Upload AAB
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: aura-build-report-${{ github.run_number }}
-          path: build-report/
+          name: aura-aab-${{ github.run_number }}
+          path: |
+            app/build/outputs/bundle/release/*.aab
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aura-reports-${{ github.run_number }}
+          path: |
+            build-report/
+            app/build/outputs/mapping/release/**
+            app/build/reports/**
+            mcp-server/build/reports/**
+            mcp-server/build/test-results/**
           if-no-files-found: warn
           retention-days: 30
 
@@ -299,12 +349,12 @@ jobs:
         with:
           tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || format('v{0}', steps.version.outputs.name) }}
           name: ${{ inputs.release_name != '' && inputs.release_name || format('AURA {0}', steps.version.outputs.name) }}
-          body: ${{ inputs.release_notes != '' && inputs.release_notes || format('See the generated build report for AURA {0}.', steps.version.outputs.name) }}
+          body: ${{ inputs.release_notes != '' && inputs.release_notes || format('Automated build for AURA {0} (commit {1}).', steps.version.outputs.name, steps.version.outputs.short_sha) }}
           files: |
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
           generate_release_notes: true
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
