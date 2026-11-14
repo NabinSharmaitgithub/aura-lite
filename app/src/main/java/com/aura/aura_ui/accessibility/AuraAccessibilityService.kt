@@ -53,6 +53,7 @@ class AuraAccessibilityService : AccessibilityService() {
     val signals: SharedFlow<AccessibilitySignal> = _signals.asSharedFlow()
 
     private var lastVolumeDownAt = 0L
+    private var unlockReceiver: com.aura.aura_ui.notifications.DeviceUnlockReceiver? = null
 
     /** Explicit accessibility-service state derived from the bound instance. */
     val state: AccessibilityState get() = if (instance != null) AccessibilityState.CONNECTED else AccessibilityState.DISCONNECTED
@@ -70,6 +71,13 @@ class AuraAccessibilityService : AccessibilityService() {
             notificationTimeout = 80
         }
         ScreenGeneration.reset()
+        if (unlockReceiver == null) {
+            val r = com.aura.aura_ui.notifications.DeviceUnlockReceiver()
+            unlockReceiver = r
+            runCatching {
+                registerReceiver(r, android.content.IntentFilter(android.content.Intent.ACTION_USER_PRESENT))
+            }
+        }
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
@@ -107,6 +115,10 @@ class AuraAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
+        unlockReceiver?.let {
+            runCatching { unregisterReceiver(it) }
+            unlockReceiver = null
+        }
         if (instance === this) instance = null
         handler.removeCallbacksAndMessages(null)
         ScreenState.clear()

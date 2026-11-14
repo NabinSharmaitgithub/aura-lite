@@ -33,6 +33,7 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
         onboardingComplete = onboardingComplete,
         onboardingStep = onboardingStep,
         userName = userName,
+        wakeOnUnlockNotifications = wakeOnUnlockNotifications,
         wakeWordEnabled = wakeWordEnabled,
         wakeWordThreshold = wakeWordThreshold,
         wakeWordScore = wakeWordScore,
@@ -99,6 +100,13 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
         get() = prefs.getFloat("wake_word_score", 1.5f)
         set(value) {
             prefs.edit().putFloat("wake_word_score", value).apply()
+            bump()
+        }
+
+    var wakeOnUnlockNotifications: Boolean
+        get() = prefs.getBoolean("wake_on_unlock_notifications", true)
+        set(value) {
+            prefs.edit().putBoolean("wake_on_unlock_notifications", value).apply()
             bump()
         }
 
@@ -376,6 +384,7 @@ data class SettingsSnapshot(
     val onboardingComplete: Boolean,
     val onboardingStep: Int,
     val userName: String,
+    val wakeOnUnlockNotifications: Boolean = true,
     val wakeWordEnabled: Boolean,
     val wakeWordThreshold: Float = 0.20f,
     val wakeWordScore: Float = 1.5f,

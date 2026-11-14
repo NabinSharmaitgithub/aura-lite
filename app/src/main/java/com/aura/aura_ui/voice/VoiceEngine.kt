@@ -19,6 +19,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
@@ -166,6 +168,16 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
                     runCatching { rec.destroy() }
                 }
             }
+        }
+    }
+
+    suspend fun speakAndAwait(text: String, timeoutMs: Long = 18000L) {
+        speak(text, flush = true)
+        kotlinx.coroutines.withTimeoutOrNull(600L) {
+            speaking.first { it }
+        }
+        kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+            speaking.first { !it }
         }
     }
 
