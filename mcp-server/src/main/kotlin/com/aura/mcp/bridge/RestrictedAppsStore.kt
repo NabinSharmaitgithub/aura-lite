@@ -54,10 +54,10 @@ data class RestrictedAppEntry(
  */
 interface RestrictedAppsStore {
     val entries: StateFlow<List<RestrictedAppEntry>> get() = MutableStateFlow(emptyList())
-    fun contains(packageName: String?): Boolean
-    fun entryFor(packageName: String?): RestrictedAppEntry? = null
-    fun isBlocked(packageName: String): Boolean = contains(packageName)
     fun blockedPackages(): Set<String> = emptySet()
+    fun isBlocked(packageName: String): Boolean = blockedPackages().contains(packageName)
+    fun contains(packageName: String?): Boolean = !packageName.isNullOrBlank() && isBlocked(packageName)
+    fun entryFor(packageName: String?): RestrictedAppEntry? = null
     fun upsert(entry: RestrictedAppEntry) {}
     fun remove(packageName: String) {}
     fun updateTier(packageName: String, tier: RestrictedTier) {}

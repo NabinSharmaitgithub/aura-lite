@@ -22,7 +22,7 @@ interface DeviceBridge {
 
     // ── Phase 2 surface ─────────────────────────────────────────────────────
 
-    fun performTap(x: Int, y: Int): Boolean
+    fun performTap(x: Int, y: Int): Boolean = false
 
     /**
      * How the last [performTap] reached the app: [TapVia.GESTURE] (the app reacted to the
@@ -32,21 +32,21 @@ interface DeviceBridge {
      */
     fun lastTapVia(): TapVia? = null
 
-    fun performHome(): Boolean
-    fun performBack(): Boolean
-    fun adjustVolume(direction: VolumeDirection): Boolean
-    fun getDeviceStatus(): DeviceStatus
+    fun performHome(): Boolean = false
+    fun performBack(): Boolean = false
+    fun adjustVolume(direction: VolumeDirection): Boolean = false
+    fun getDeviceStatus(): DeviceStatus = DeviceStatus(accessibilityServiceRunning = true, screenWidthPx = 1080, screenHeightPx = 2400, androidApiLevel = 33, deviceModel = "Test Device")
 
     // ── Phase 3 surface ─────────────────────────────────────────────────────
 
     /** Tap twice in quick succession at the same point. */
-    fun performDoubleTap(x: Int, y: Int): Boolean
+    fun performDoubleTap(x: Int, y: Int): Boolean = false
 
     /** Press-and-hold at a point for [durationMs] milliseconds. */
-    fun performLongPress(x: Int, y: Int, durationMs: Long): Boolean
+    fun performLongPress(x: Int, y: Int, durationMs: Long): Boolean = false
 
     /** Swipe from (x1, y1) to (x2, y2) over [durationMs] milliseconds. */
-    fun performSwipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long): Boolean
+    fun performSwipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long): Boolean = false
 
     /**
      * Trace each stroke in turn, one finger, lifting between strokes: drawing, signatures, drags.
@@ -57,16 +57,16 @@ interface DeviceBridge {
     fun performStrokes(strokes: List<List<Pair<Int, Int>>>, durationMs: Long, holdMs: Long): Boolean = false
 
     /** Scroll in [direction] (UP/DOWN/LEFT/RIGHT) — a 50% screen-distance swipe. */
-    fun performScroll(direction: ScrollDirection): Boolean
+    fun performScroll(direction: ScrollDirection): Boolean = false
 
     /** Inject the Recent Apps system action. */
-    fun performRecents(): Boolean
+    fun performRecents(): Boolean = false
 
     /** Inject the Enter key on the currently focused editor. */
-    fun pressEnter(): Boolean
+    fun pressEnter(): Boolean = false
 
     /** Type [text] into the currently focused editable field. */
-    fun typeText(text: String): Boolean
+    fun typeText(text: String): Boolean = false
 
     /**
      * Type [text] into the editable field located at full-resolution ([x], [y]) — the
@@ -92,13 +92,13 @@ interface DeviceBridge {
      * the accessibility service's inactivity watchdog is the backstop for
      * runs that never end cleanly.
      */
-    fun restoreKeyboard(): Boolean
+    fun restoreKeyboard(): Boolean = false
 
     /** Launch the app with the given Android [packageName]. */
-    fun launchApp(packageName: String): Boolean
+    fun launchApp(packageName: String): Boolean = false
 
     /** Resolve a human-readable [query] to an [AppLookupResult]. */
-    fun lookupApp(query: String): AppLookupResult
+    fun lookupApp(query: String): AppLookupResult = AppLookupResult(found = false, packageName = "", appName = query, candidates = emptyList(), error = "Not found")
 
     /**
      * The clipboard's text, or null when it is empty or Android refuses the read (Android 10+
