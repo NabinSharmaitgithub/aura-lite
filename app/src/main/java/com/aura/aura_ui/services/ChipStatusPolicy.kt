@@ -57,5 +57,10 @@ object ChipStatusPolicy {
         is McpServerHealth.Crashed,
         -> voiceStatus
         is McpServerHealth.Listening -> if (voiceStatus != AuraStatus.Idle) voiceStatus else toolStatus
+        else -> if (health.running) {
+            if (voiceStatus != AuraStatus.Idle) voiceStatus else toolStatus
+        } else {
+            voiceStatus
+        }
     }
 }

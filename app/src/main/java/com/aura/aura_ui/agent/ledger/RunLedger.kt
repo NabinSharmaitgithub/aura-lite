@@ -3,8 +3,7 @@ package com.aura.aura_ui.agent.ledger
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicLong
+import kotlinx.serialization.serializer
 
 @Serializable
 enum class PlanStepStatus(val wire: String) {
@@ -13,23 +12,67 @@ enum class PlanStepStatus(val wire: String) {
     DONE("done"),
     BLOCKED("blocked"),
     SKIPPED("skipped"),
+    FAILED("failed"),
     ;
+
+    val isSettled: Boolean get() = this == DONE || this == BLOCKED || this == SKIPPED || this == FAILED
 
     companion object {
         fun fromWire(value: String?): PlanStepStatus =
-            entries.firstOrNull { it.wire == value } ?: PENDING
+            entries.firstOrNull { it.wire.equals(value, ignoreCase = true) } ?: PENDING
     }
 }
 
 @Serializable
 data class PlanStep(
-    val id: String,
-    val description: String,
-    var status: String = PlanStepStatus.PENDING.wire,
-    var note: String? = null,
+    val text: String = "",
+    val status: PlanStepStatus = PlanStepStatus.PENDING,
+    val evidence: String? = null,
+    val failReason: String? = null,
+    val attempts: Int = 0,
+    val id: String = "",
+    val description: String = text,
+    val note: String? = null,
 ) {
-    /** Typed view of the persisted wire value. */
-    val typedStatus: PlanStepStatus get() = PlanStepStatus.fromWire(status)
+    val settled: Boolean get() = status == PlanStepStatus.DONE || status == PlanStepStatus.FAILED || status == PlanStepStatus.SKIPPED
+    val typedStatus: PlanStepStatus get() = status
+}
+
+@Serializable
+data class StepRecord(
+    val tool: String,
+    val label: String? = null,
+    val ok: Boolean = true,
+    val screenChanged: Boolean? = null,
+)
+
+@Serializable
+data class Finding(
+    val item: String,
+    val quote: String = "",
+)
+
+@Serializable
+data class ResearchNote(
+    val source: String,
+    val text: String,
+)
+
+@Serializable
+data class RunOutcome(
+    val claimed: String? = null,
+    val verdict: String = UNVERIFIED,
+    val why: String? = null,
+    val enforced: Boolean = false,
+    val proven: Int? = null,
+    val target: Int? = null,
+) {
+    companion object {
+        const val SUCCESS = "success"
+        const val PARTIAL = "partial"
+        const val FAIL = "fail"
+        const val UNVERIFIED = "unverified"
+    }
 }
 
 @Serializable
@@ -39,6 +82,24 @@ data class LedgerFact(
     val source: String? = null,
     val at: Long = System.currentTimeMillis(),
 )
+
+object RunLedgerCaps {
+    const val MAX_PLAN_STEPS = 12
+    const val MAX_STEP_ATTEMPTS = 3
+    const val CHECKPOINT_EVERY = 5
+    const val MAX_FACTS = 12
+    const val MAX_DEAD_ENDS = 6
+    const val MAX_RECENT_STEPS = 5
+    const val MAX_FINDINGS = 10
+    const val MAX_DIRECTIVE_CHARS = 300
+    const val MAX_FINDING_CHARS = 200
+    const val MAX_QUOTE_CHARS = 200
+    const val MAX_DELIVERABLE_CHARS = 200
+    const val MAX_FAIL_REASON_CHARS = 200
+    const val MAX_FACT_CHARS = 200
+    const val MAX_EVIDENCE_CHARS = 200
+    const val MAX_TARGET_COUNT = 50
+}
 
 @Serializable
 data class RunLedgerState(
@@ -55,89 +116,72 @@ data class RunLedgerState(
 
 /**
  * Per-run ledger: tracks plan/facts/dead-ends for prompt injection and resumability.
- * Persist snapshots at checkpoints (pause/end/failure) so runs can resume with re-verification.
  */
-class RunLedger(
-    val state: RunLedgerState,
-    private val json: Json = Json { encodeDefaults = true; ignoreUnknownKeys = true; prettyPrint = false },
+@Serializable
+data class RunLedger(
+    val runId: String = "",
+    val goal: String = "",
+    val provider: String = "",
+    val modelId: String = "",
+    val startedAtMs: Long = System.currentTimeMillis(),
+    val planVersion: Int = 0,
+    val planSteps: List<PlanStep> = emptyList(),
+    val settledSteps: Int = 0,
+    val progressAtCall: Int = 0,
+    val toolCalls: Int = 0,
+    val stalledCalls: Int? = null,
+    val surprise: String? = null,
+    val surpriseAtCall: Int = 0,
+    val facts: List<String> = emptyList(),
+    val deadEnds: List<String> = emptyList(),
+    val recentSteps: List<StepRecord> = emptyList(),
+    val totalSteps: Int = 0,
+    val failedSteps: Int = 0,
+    val directive: String? = null,
+    val directiveAtMs: Long? = null,
+    val deliverable: String? = null,
+    val targetCount: Int? = null,
+    val findings: List<Finding> = emptyList(),
+    val outcome: RunOutcome? = null,
+    val research: ResearchNote? = null,
+    val endedAtMs: Long? = null,
+    val endReason: String? = null,
 ) {
-    private val revision = AtomicLong(0)
+    val state: RunLedgerState get() = RunLedgerState(
+        runId = runId,
+        goal = goal,
+        createdAt = startedAtMs,
+        updatedAt = System.currentTimeMillis(),
+        steps = planSteps.toMutableList(),
+        facts = facts.map { LedgerFact(it, it) }.toMutableList(),
+        deadEnds = deadEnds.toMutableList(),
+        outcome = outcome?.claimed,
+    )
 
-    fun revision(): Long = revision.get()
+    fun revision(): Long = (planVersion + totalSteps + facts.size + deadEnds.size).toLong()
 
-    fun setPlan(descriptions: List<String>) {
-        state.steps.clear()
-        descriptions.forEachIndexed { i, d ->
-            state.steps += PlanStep(id = "s${i + 1}", description = d)
-        }
-        touch()
-    }
+    fun toPromptBlock(maxFacts: Int = 12, maxDeadEnds: Int = 6): String =
+        RunLedgerRenderer.render(this)
 
-    fun updateStep(id: String, status: PlanStepStatus, note: String? = null) {
-        state.steps.firstOrNull { it.id == id }?.let {
-            it.status = status.wire
-            if (note != null) it.note = note
-            touch()
-        }
-    }
+    fun snapshotJson(): String =
+        Json { encodeDefaults = true; ignoreUnknownKeys = true }.encodeToString(serializer(), this)
 
-    fun addFact(key: String, value: String, source: String? = null) {
-        state.facts.removeAll { it.key == key }
-        state.facts += LedgerFact(key, value, source)
-        touch()
-    }
-
-    fun addDeadEnd(reason: String) {
-        if (reason.isNotBlank() && state.deadEnds.none { it == reason }) {
-            state.deadEnds += reason.take(300)
-            touch()
-        }
-    }
-
-    fun finish(outcome: String, summary: String?) {
-        state.outcome = outcome
-        state.summary = summary
-        touch()
-    }
-
-    fun toPromptBlock(maxFacts: Int = 12, maxDeadEnds: Int = 6): String = buildString {
-        appendLine("RUN LEDGER")
-        appendLine("Goal: ${state.goal}")
-        if (state.steps.isNotEmpty()) {
-            appendLine("Plan:")
-            state.steps.forEach { s ->
-                append("- [${s.status}] ${s.id}: ${s.description}")
-                val note = s.note
-                if (!note.isNullOrBlank()) append(" ($note)")
-                appendLine()
-            }
-        }
-        if (state.facts.isNotEmpty()) {
-            appendLine("Facts:")
-            state.facts.takeLast(maxFacts).forEach { f -> appendLine("- ${f.key}: ${f.value}") }
-        }
-        if (state.deadEnds.isNotEmpty()) {
-            appendLine("Dead ends (do not repeat):")
-            state.deadEnds.takeLast(maxDeadEnds).forEach { d -> appendLine("- $d") }
-        }
-        state.outcome?.let { appendLine("Outcome: $it") }
-    }.trim()
-
-    fun snapshotJson(): String {
-        state.updatedAt = System.currentTimeMillis()
-        return json.encodeToString(state)
-    }
-
-    private fun touch() {
-        state.updatedAt = System.currentTimeMillis()
-        revision.incrementAndGet()
+    fun withDirective(text: String): RunLedger {
+        val trimmed = text.trim().take(RunLedgerCaps.MAX_DIRECTIVE_CHARS)
+        return if (trimmed.isEmpty()) copy(directive = null, directiveAtMs = null)
+        else copy(directive = trimmed, directiveAtMs = System.currentTimeMillis())
     }
 
     companion object {
-        fun create(runId: String, goal: String): RunLedger = RunLedger(RunLedgerState(runId = runId, goal = goal))
+        const val STORE_NAME = "run_ledgers"
+        const val ABANDONED = "abandoned"
+        const val MIN_RECORDED_STEPS = 2
+        const val RESUMABLE_WINDOW_MS = 24 * 60 * 60 * 1000L
 
-        fun fromJson(raw: String, json: Json = Json { ignoreUnknownKeys = true }): RunLedger? = runCatching {
-            RunLedger(json.decodeFromString<RunLedgerState>(raw), json)
+        fun create(runId: String, goal: String): RunLedger = RunLedger(runId = runId, goal = goal)
+
+        fun fromJson(raw: String): RunLedger? = runCatching {
+            Json { ignoreUnknownKeys = true }.decodeFromString(serializer(), raw)
         }.getOrNull()
     }
 }

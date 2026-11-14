@@ -77,6 +77,8 @@ object McpToolScopes {
         "browser_handoff" to McpScope.WRITE,
 
         // ── WRITE ──────────────────────────────────────────────
+        "lock_device" to McpScope.WRITE,
+        "unlock_device" to McpScope.WRITE,
         "tap" to McpScope.WRITE,
         "press_key" to McpScope.WRITE,
         "volume" to McpScope.WRITE,

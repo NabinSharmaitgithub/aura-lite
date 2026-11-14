@@ -281,6 +281,7 @@ dependencies {
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.appcheck)
     implementation(libs.play.services.auth)
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)

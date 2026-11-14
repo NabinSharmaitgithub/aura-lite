@@ -435,6 +435,8 @@ class AuraOverlayService : Service() {
     companion object {
         private const val TAG = "AuraOverlayService"
 
+        const val ACTION_RUN_TASK = "com.aura.aura_ui.overlay.RUN_TASK"
+        const val EXTRA_TASK_TEXT = "extra_task_text"
         const val ACTION_SHOW = "com.aura.aura_ui.overlay.SHOW"
         const val ACTION_SHOW_AND_LISTEN = "com.aura.aura_ui.overlay.SHOW_AND_LISTEN"
         const val ACTION_SHOW_TASK = "com.aura.aura_ui.overlay.SHOW_TASK"

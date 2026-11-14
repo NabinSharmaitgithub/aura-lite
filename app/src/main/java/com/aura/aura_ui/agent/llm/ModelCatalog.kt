@@ -82,6 +82,11 @@ class ModelCatalog @Inject constructor(private val http: OkHttpClient) {
         }
     }
 
+    fun reasoningCapableForWire(endpoint: LlmEndpoint, modelId: String): Boolean {
+        if (modelId == "openai/gpt-oss-20b") return true
+        return inferReasoning(modelId)
+    }
+
     fun inferVision(id: String): Boolean {
         val m = id.lowercase()
         return listOf("vision", "4o", "llava", "pixtral", "qwen-vl", "gemini", "claude-3", "claude-4", "minicpm", "internvl", "llama-3.2-11b-vision", "llama-3.2-90b-vision")

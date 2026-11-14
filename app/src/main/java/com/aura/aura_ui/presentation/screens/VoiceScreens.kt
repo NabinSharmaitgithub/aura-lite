@@ -192,7 +192,7 @@ fun VoiceSettingsScreen(vm: AuraViewModel, onNavigateToWakeWord: () -> Unit = {}
                 GroupedRow(
                     title = "Wake on unlock for notifications",
                     subtitle = if (settings.wakeOnUnlockNotifications) "Announce & reply to new notifications when unlocking" else "Off",
-                    icon = androidx.compose.material.icons.Icons.Outlined.Notifications,
+                    icon = androidx.compose.material.icons.Icons.Default.Notifications,
                     trailing = {
                         AuraSwitch(
                             checked = settings.wakeOnUnlockNotifications,

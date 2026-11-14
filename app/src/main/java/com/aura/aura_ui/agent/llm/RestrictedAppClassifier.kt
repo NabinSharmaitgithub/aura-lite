@@ -51,8 +51,9 @@ class RestrictedAppClassifier(private val context: Context) {
             val response = runCatching {
                 val result = client.execute(buildPrompt(chunk), model)
                 (result as? Message.Assistant)?.textContent() ?: result.toString()
-            }.getOrElse { t ->
-                Log.w(TAG, "Classification chunk failed (${chunk.size} apps): ${t.message}")
+            }.getOrNull()
+            if (response == null) {
+                Log.w(TAG, "Classification chunk failed (${chunk.size} apps)")
                 continue
             }
             suggestions += RestrictedAppResponseParser.parse(response, chunk, nowMs)

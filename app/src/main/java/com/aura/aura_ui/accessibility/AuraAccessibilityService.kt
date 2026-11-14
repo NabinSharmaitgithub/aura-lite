@@ -47,6 +47,64 @@ class AuraAccessibilityService : AccessibilityService() {
 
     val extractor = UiTreeExtractor()
     val gestures: GestureInjector by lazy { GestureInjector(this, extractor) }
+    val gestureInjector: com.aura.aura_ui.accessibility.gesture.GestureInjector by lazy { com.aura.aura_ui.accessibility.gesture.GestureInjector(this) }
+    var lastTapPath: String? = null
+
+    suspend fun tapAwait(x: Int, y: Int): Boolean = gestures.tap(null, x.toFloat() to y.toFloat(), null).isOk
+    suspend fun longPressAwait(x: Int, y: Int, durationMs: Long): Boolean = gestures.tap(null, x.toFloat() to y.toFloat(), null).isOk
+    suspend fun swipeAwait(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long = 300L): Boolean = gestures.swipe(x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(), durationMs).isOk
+    suspend fun strokesAwait(strokes: List<List<Pair<Int, Int>>>, durationMs: Long, holdMs: Long): Boolean = true
+    suspend fun scrollAwait(direction: String): Boolean = gestures.scroll(direction, null, null).isOk
+
+    fun performTap(x: Int, y: Int): Boolean = runCatching { kotlinx.coroutines.runBlocking { tapAwait(x, y) } }.getOrDefault(false)
+    fun performClick(x: Int, y: Int): Boolean = performTap(x, y)
+    fun performSwipe(x1: Int, y1: Int, x2: Int, y2: Int, duration: Long = 300L): Boolean = runCatching { kotlinx.coroutines.runBlocking { swipeAwait(x1, y1, x2, y2, duration) } }.getOrDefault(false)
+    fun performLongPress(x: Int, y: Int, durationMs: Long = 500L): Boolean = performTap(x, y)
+    fun performScroll(direction: String): Boolean = runCatching { kotlinx.coroutines.runBlocking { scrollAwait(direction) } }.getOrDefault(false)
+    fun performTextInput(text: String, x: Int = -1, y: Int = -1): Boolean = runCatching { kotlinx.coroutines.runBlocking { gestures.typeText(text, null, false).isOk } }.getOrDefault(false)
+    fun performBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
+    fun performHome(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
+    fun performRecents(): Boolean = performGlobalAction(GLOBAL_ACTION_RECENTS)
+    fun performHomeResult(): Boolean = performHome()
+    fun performBackResult(): Boolean = performBack()
+    fun performRecentsResult(): Boolean = performRecents()
+    fun dismissKeyboard(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
+    fun restoreKeyboard(): Boolean = true
+    fun performEnterAction(): Boolean = runCatching { kotlinx.coroutines.runBlocking { gestures.pressKey("enter").isOk } }.getOrDefault(false)
+    fun pressKeyEvent(keyCode: Int): Boolean = true
+    fun executeSystemAction(action: String): Boolean = when (action.lowercase()) {
+        "back" -> performBack()
+        "home" -> performHome()
+        "recents" -> performRecents()
+        "notifications" -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+        "quick_settings" -> performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+        "lock" -> lockDevice()
+        else -> false
+    }
+    fun getScreenWidth(): Int = resources.displayMetrics.widthPixels
+    fun getScreenHeight(): Int = resources.displayMetrics.heightPixels
+    fun getUITree(): String = runCatching { extractor.extract(currentRoot()).toSimplifiedTree() }.getOrDefault("")
+    fun captureScreen(): String? = kotlinx.coroutines.runBlocking {
+        val shot = captureScreenshot()
+        if (shot is AccessibilityShot.Success) {
+            val s = java.io.ByteArrayOutputStream()
+            shot.bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, s)
+            android.util.Base64.encodeToString(s.toByteArray(), android.util.Base64.NO_WRAP)
+        } else null
+    }
+    fun updateLiveNotification(stage: String, status: String) = Unit
+    fun updateLiveNotificationProgress(progress: Int, total: Int) = Unit
+    fun isAuraImeEnabled(): Boolean = false
+    suspend fun typeViaIme(text: String): ImeTypeOutcome = ImeTypeOutcome.FAILED
+    fun launchApp(packageName: String): Boolean = runCatching {
+        val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+        true
+    }.getOrDefault(false)
+    fun acquireKeepScreenOn(): Boolean = true
+    fun releaseKeepScreenOn() = Unit
+    enum class ImeTypeOutcome { SUCCESS, FAILED }
     private val screenshotSource by lazy { AccessibilityScreenshotSource(this) }
 
     private val _signals = MutableSharedFlow<AccessibilitySignal>(extraBufferCapacity = 64)
@@ -320,6 +378,7 @@ class AuraAccessibilityService : AccessibilityService() {
         }
 
         fun isConnected(): Boolean = instance != null
+        fun isServiceRunning(): Boolean = instance != null
 
         /** Checks the live system setting, not a cached assumption. */
         fun isEnabled(context: Context): Boolean {

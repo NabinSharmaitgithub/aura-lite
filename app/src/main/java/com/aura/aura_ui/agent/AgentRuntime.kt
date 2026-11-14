@@ -128,7 +128,7 @@ class AgentRuntime @Inject constructor(
         }
         pendingDirectives.add(trimmed)
         scope.launch {
-            runCatching { activeLedger?.setDirective(trimmed) }
+            runCatching { activeLedger = activeLedger?.withDirective(trimmed) }
             runCatching { com.aura.aura_ui.agent.ledger.ActiveRunRegistry.shared.current?.setDirective(trimmed) }
         }
         StatusNarrator.update(com.aura.aura_ui.state.NarrationState.PLANNING, "Instruction: $trimmed")

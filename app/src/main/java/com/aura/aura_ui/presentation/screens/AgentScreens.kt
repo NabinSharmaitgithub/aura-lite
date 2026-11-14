@@ -1,3 +1,4 @@
+import androidx.compose.material.icons.outlined.Mic
 package com.aura.aura_ui.presentation.screens
 
 import androidx.compose.foundation.background

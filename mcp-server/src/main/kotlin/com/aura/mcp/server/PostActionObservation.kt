@@ -94,6 +94,8 @@ internal object PostActionObservation {
     )
 
     val UNOBSERVED_WRITE_TOOLS: Set<String> = setOf(
+        "lock_device",
+        "unlock_device",
         "volume",
         // scroll: settles and looks for itself, returning what came into view with live som_ids;
         // this summary would only repeat the settle and list the largest labels instead.

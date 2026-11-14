@@ -105,7 +105,7 @@ class AppDeviceBridge(
      * null as "unknown" and fall back to pre-foreground behaviour, so this stays
      * safe on devices where accessibility is unavailable.
      */
-    internal fun foregroundPackage(): String? {
+    override suspend fun foregroundPackage(): String? {
         val svc = service ?: return null
         return runCatching {
             svc.rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotBlank() }

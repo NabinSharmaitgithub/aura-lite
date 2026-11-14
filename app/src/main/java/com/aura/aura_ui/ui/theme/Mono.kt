@@ -1,3 +1,4 @@
+import androidx.compose.foundation.shape.RoundedCornerShape
 package com.aura.aura_ui.ui.theme
 
 import androidx.compose.runtime.Immutable
@@ -60,6 +61,21 @@ object Mono {
     const val MotionFast = 150
     const val MotionNormal = 220
     const val MotionSlow = 400
+
+    // Shapes
+    val ShapeCard = RoundedCornerShape(24.dp)
+    val ShapeCardSmall = RoundedCornerShape(16.dp)
+    val ShapeChip = RoundedCornerShape(12.dp)
+    val ShapePill = RoundedCornerShape(999.dp)
+
+    object Space {
+        val xs: Dp = Mono.xs
+        val sm: Dp = Mono.sm
+        val md: Dp = Mono.md
+        val lg: Dp = Mono.lg
+        val xl: Dp = Mono.xl
+        val xxl: Dp = Mono.xxl
+    }
 }
 
 /** Semantic palette handed to every screen. */
@@ -86,6 +102,12 @@ data class MonoScheme(
     val switchOff: Color,
     val successDot: Color,
 ) {
+    val chip: Color get() = if (isDark) Mono.ChipDark else Color(0xFFF2F2EE)
+    val chipContent: Color get() = textPrimary
+    val card: Color get() = if (isDark) Mono.CardDark else Mono.CanvasHigh
+    val divider: Color get() = outline
+    val accent: Color get() = ink
+
     companion object {
         val Light = MonoScheme(
             isDark = false,

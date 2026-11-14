@@ -14,12 +14,16 @@ data class ModelInfo(
     val vision: Boolean,
     val reasoning: Boolean,
     val cheap: Boolean,
+    val visionCapable: Boolean = vision,
+    val reasoningCapable: Boolean = reasoning,
+    val canDisableThinking: Boolean = true,
+    val isFree: Boolean? = if (cheap) true else null,
 ) {
     val badges: List<String>
         get() = buildList {
-            if (vision) add("vision")
-            if (reasoning) add("reasoning")
-            if (cheap) add("cheap")
+            if (vision || visionCapable) add("vision")
+            if (reasoning || reasoningCapable) add("reasoning")
+            if (cheap || isFree == true) add("cheap")
         }
 }
 

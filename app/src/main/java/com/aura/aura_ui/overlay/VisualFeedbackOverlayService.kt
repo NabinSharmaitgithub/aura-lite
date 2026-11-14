@@ -99,4 +99,42 @@ class VisualFeedbackOverlayService : Service() {
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), Paint().apply { color = Color.TRANSPARENT })
         }
     }
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+    }
+
+    companion object {
+        @Volatile
+        var instance: VisualFeedbackOverlayService? = null
+            private set
+
+        fun getInstance(): VisualFeedbackOverlayService? = instance
+
+        fun showHITLDialog(
+            questionId: String,
+            questionType: String,
+            title: String,
+            message: String,
+            options: List<String>,
+            defaultOption: String?,
+            timeoutSeconds: Float,
+            allowCancel: Boolean,
+            actionType: String?,
+            metadata: Map<String, Any>,
+            onResponse: (org.json.JSONObject) -> Unit
+        ) {
+            Log.i("VisualFeedbackOverlay", "showHITLDialog: $title")
+        }
+
+        fun dismissHITLDialog() {}
+
+        fun handleVisualFeedbackCommand(command: Map<String, Any?>) {
+            Log.i("VisualFeedbackOverlay", "handleVisualFeedbackCommand: $command")
+        }
+
+        fun showTapRipple(x: Float, y: Float) {
+            Log.i("VisualFeedbackOverlay", "showTapRipple at ($x, $y)")
+        }
+    }
 }

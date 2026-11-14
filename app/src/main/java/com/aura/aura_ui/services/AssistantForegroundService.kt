@@ -150,6 +150,13 @@ class AssistantForegroundService : Service() {
         const val ACTION_PAUSE = "com.aura.ACTION_PAUSE"
         const val ACTION_RESUME = "com.aura.ACTION_RESUME"
         const val ACTION_STOP = "com.aura.ACTION_STOP"
+        const val ACTION_MCP_START_WEBRTC = "com.aura.ACTION_MCP_START_WEBRTC"
+        const val ACTION_MCP_STOP = "com.aura.ACTION_MCP_STOP"
+        const val ACTION_MCP_RESTART = "com.aura.ACTION_MCP_RESTART"
+        const val ACTION_MCP_APPROVE_CONNECTION = "com.aura.ACTION_MCP_APPROVE_CONNECTION"
+        const val ACTION_MCP_DENY_CONNECTION = "com.aura.ACTION_MCP_DENY_CONNECTION"
+        const val ACTION_MCP_DISCONNECT = "com.aura.ACTION_MCP_DISCONNECT"
+        const val EXTRA_SESSION_KEY = "extra_session_key"
         const val EXTRA_GOAL = "goal"
         const val EXTRA_ENTRY_MODE = "entry_mode"
 

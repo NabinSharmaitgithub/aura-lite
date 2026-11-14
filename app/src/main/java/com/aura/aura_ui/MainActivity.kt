@@ -88,4 +88,7 @@ class MainActivity : ComponentActivity() {
             AssistantForegroundService.listen(this)
         }
     }
+    companion object {
+        const val EXTRA_NAVIGATE_TO_EVAL = "extra_navigate_to_eval"
+    }
 }

@@ -35,6 +35,7 @@ object TraceType {
     const val USER_ANSWER = "user_answer"
     const val ERROR = "error"
     const val INTERRUPT = "interrupt"
+    const val USER_INTERRUPT = "interrupt"
     const val ANSWER = "answer"
     const val SESSION_END = "session_end"
 }

@@ -34,6 +34,7 @@ class AuraApplication : Application() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
+        instance = this
         super.onCreate()
         AuraNotifications.ensureChannels(this)
         RetentionWorker.enqueue(this)
@@ -48,5 +49,9 @@ class AuraApplication : Application() {
                 sessions.clearInterruption()
             }
         }
+    }
+    companion object {
+        lateinit var instance: AuraApplication
+            private set
     }
 }

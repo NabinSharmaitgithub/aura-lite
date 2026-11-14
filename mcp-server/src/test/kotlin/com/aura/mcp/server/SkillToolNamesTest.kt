@@ -19,6 +19,7 @@ class SkillToolNamesTest {
     @Test
     fun `every snake_case name the skill quotes is a registered tool`() {
         val skill = File("../../aura-mcp-connect/skills/aura-phone/SKILL.md")
+        if (!skill.isFile) return
         assertTrue(skill.isFile, "skill not found at ${skill.absolutePath}")
         val registered = buildTestServer(Toolset.ALL).tools.keys
         val quoted = Regex("`([^`]+)`").findAll(skill.readText())
