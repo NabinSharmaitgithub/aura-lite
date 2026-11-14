@@ -13,6 +13,7 @@ object Routes {
     const val AGENT_MEMORY = "agent/memory"
     const val AGENT_COMPANION = "agent/companion"
     const val AGENT_VOICE = "agent/voice"
+    const val AGENT_WAKE_WORD = "agent/wakeword"
 
     const val SETTINGS_B2 = "settings/backblaze"
     const val SETTINGS_FIREBASE = "settings/firebase"
@@ -45,6 +46,7 @@ object Routes {
         AGENT_MEMORY to "Memory",
         AGENT_COMPANION to "Companion",
         AGENT_VOICE to "Voice",
+        AGENT_WAKE_WORD to "Wake Word",
         SETTINGS_B2 to "Backblaze B2",
         SETTINGS_FIREBASE to "Firebase",
         SETTINGS_TAVILY to "Search key",

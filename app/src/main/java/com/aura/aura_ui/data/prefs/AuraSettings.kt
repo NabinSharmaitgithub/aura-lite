@@ -34,6 +34,8 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
         onboardingStep = onboardingStep,
         userName = userName,
         wakeWordEnabled = wakeWordEnabled,
+        wakeWordThreshold = wakeWordThreshold,
+        wakeWordScore = wakeWordScore,
         companionEnabled = companionEnabled,
         screenCaptureEnabled = screenCaptureEnabled,
         readScreenImageEnabled = readScreenImageEnabled,
@@ -48,6 +50,8 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
         llmModelId = llmModelId,
         temperature = temperature,
         ttsVoice = ttsVoice,
+        ttsPitch = ttsPitch,
+        ttsRate = ttsRate,
         vadSensitivity = vadSensitivity,
         mcpEnabled = mcpEnabled,
         mcpPort = mcpPort,
@@ -80,6 +84,21 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
         get() = prefs.getString("user_name", "") ?: ""
         set(value) {
             prefs.edit().putString("user_name", value).apply()
+            bump()
+        }
+
+    
+    var wakeWordThreshold: Float
+        get() = prefs.getFloat("wake_word_threshold", 0.20f)
+        set(value) {
+            prefs.edit().putFloat("wake_word_threshold", value).apply()
+            bump()
+        }
+
+    var wakeWordScore: Float
+        get() = prefs.getFloat("wake_word_score", 1.5f)
+        set(value) {
+            prefs.edit().putFloat("wake_word_score", value).apply()
             bump()
         }
 
@@ -185,6 +204,20 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
         get() = prefs.getString("tts_voice", "") ?: ""
         set(value) {
             prefs.edit().putString("tts_voice", value).apply()
+            bump()
+        }
+
+    var ttsPitch: Float
+        get() = prefs.getFloat("tts_pitch", 1.0f)
+        set(value) {
+            prefs.edit().putFloat("tts_pitch", value.coerceIn(0.5f, 2.0f)).apply()
+            bump()
+        }
+
+    var ttsRate: Float
+        get() = prefs.getFloat("tts_rate", 1.0f)
+        set(value) {
+            prefs.edit().putFloat("tts_rate", value.coerceIn(0.5f, 2.0f)).apply()
             bump()
         }
 
@@ -344,6 +377,8 @@ data class SettingsSnapshot(
     val onboardingStep: Int,
     val userName: String,
     val wakeWordEnabled: Boolean,
+    val wakeWordThreshold: Float = 0.20f,
+    val wakeWordScore: Float = 1.5f,
     val companionEnabled: Boolean,
     val screenCaptureEnabled: Boolean,
     val readScreenImageEnabled: Boolean,
@@ -358,6 +393,8 @@ data class SettingsSnapshot(
     val llmModelId: String,
     val temperature: Float,
     val ttsVoice: String,
+    val ttsPitch: Float = 1.0f,
+    val ttsRate: Float = 1.0f,
     val vadSensitivity: Int,
     val mcpEnabled: Boolean,
     val mcpPort: Int,

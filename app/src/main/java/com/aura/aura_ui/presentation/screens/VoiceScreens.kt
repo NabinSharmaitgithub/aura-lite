@@ -15,6 +15,9 @@ import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -162,14 +165,15 @@ fun CompanionScreen(vm: AuraViewModel) {
 }
 
 @Composable
-fun VoiceSettingsScreen(vm: AuraViewModel) {
+fun VoiceSettingsScreen(vm: AuraViewModel, onNavigateToWakeWord: () -> Unit = {}) {
     val mono = LocalMonoScheme.current
     val settings by vm.settings.collectAsStateWithLifecycle()
     val permissions = rememberPermissions(vm)
     val notice by vm.notice.collectAsStateWithLifecycle()
     var voiceName by remember(settings.ttsVoice) { mutableStateOf(settings.ttsVoice) }
-    var testLine by remember { mutableStateOf("This is AURA. I am ready.") }
-    val voices = remember { vm.ttsVoices() }
+    var testLine by remember { mutableStateOf("Hi! I am Aura, your personal AI assistant.") }
+    val voiceList = remember { vm.ttsVoiceList() }
+    var showVoiceDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth().statusBarsPadding(),
@@ -190,10 +194,11 @@ fun VoiceSettingsScreen(vm: AuraViewModel) {
                     subtitle = when {
                         !vm.wakeWordAvailable -> "Model not bundled · add assets/kws (expected: Wake up AURA)"
                         !permissions.microphone -> "Microphone permission needed"
-                        settings.wakeWordEnabled -> "Listening for “${WakeWordEngine.configuredKeywordLabel(LocalContext.current)}”"
-                        else -> "Off (${WakeWordEngine.configuredKeywordLabel(LocalContext.current)})"
+                        settings.wakeWordEnabled -> "Listening for “${WakeWordEngine.configuredKeywordLabel(LocalContext.current)}” · tap to tune"
+                        else -> "Off · tap to configure"
                     },
                     icon = Icons.Outlined.Mic,
+                    onClick = onNavigateToWakeWord,
                     trailing = {
                         AuraSwitch(
                             checked = settings.wakeWordEnabled,
@@ -201,7 +206,7 @@ fun VoiceSettingsScreen(vm: AuraViewModel) {
                             enabled = vm.wakeWordAvailable && permissions.microphone,
                         )
                     },
-                    showChevron = false,
+                    showChevron = true,
                 )
                 GroupedRow(
                     title = "Speech recognition",
@@ -247,49 +252,133 @@ fun VoiceSettingsScreen(vm: AuraViewModel) {
         item {
             SectionHeader("Speaking voice (TTS)")
             SurfaceCard {
-                Text(
-                    "Use system default, Google TTS (enter \"google\"), or an engine/voice string like \"com.google.android.tts|VoiceName\".",
-                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                    color = mono.textSecondary,
-                )
-                Spacer(Modifier.height(8.dp))
-                AuraTextField(
-                    value = voiceName,
-                    onValueChange = { voiceName = it },
-                    placeholder = "google or system default voice",
-                    textStyle = MonoStyle,
-                )
-                if (voices.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text("Voices: " + voices.take(8).joinToString(" · "), style = MonoStyleSmall, color = mono.textSecondary)
+                val currentVoiceLabel = when {
+                    settings.ttsVoice.isBlank() -> "System Default Voice"
+                    settings.ttsVoice == "google" -> "Google TTS (Default)"
+                    else -> voiceList.firstOrNull { it.name == settings.ttsVoice }?.displayName ?: settings.ttsVoice
                 }
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SecondaryButton("Save voice", {
-                        vm.updateSettings { it.ttsVoice = voiceName.trim() }
-                        vm.showNotice("Voice saved")
-                    }, modifier = Modifier.weight(1f))
-                    SecondaryButton("Use Google TTS", {
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Active Voice", style = androidx.compose.material3.MaterialTheme.typography.titleMedium, color = mono.textPrimary)
+                        Text(currentVoiceLabel, style = MonoStyleSmall, color = mono.accent)
+                    }
+                    Badge(if (settings.ttsVoice.isBlank()) "Default" else "Custom", tone = ChipTone.Live)
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SecondaryButton("Select Voice", { showVoiceDialog = true }, modifier = Modifier.weight(1.2f))
+                    SecondaryButton("Google TTS", {
                         voiceName = "google"
                         vm.updateSettings { it.ttsVoice = "google" }
-                        vm.showNotice("Google TTS selected (if installed)")
+                        vm.showNotice("Google TTS selected")
                     }, modifier = Modifier.weight(1f))
+                    SecondaryButton("Reset", {
+                        voiceName = ""
+                        vm.updateSettings { 
+                            it.ttsVoice = ""
+                            it.ttsPitch = 1.0f
+                            it.ttsRate = 1.0f
+                        }
+                        vm.showNotice("Voice reset to default")
+                    }, modifier = Modifier.weight(0.8f))
                 }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Pitch slider
+                KeyValueRow("Voice Pitch", String.format("%.1fx", settings.ttsPitch))
+                Slider(
+                    value = settings.ttsPitch,
+                    onValueChange = { vm.updateSettings { s -> s.ttsPitch = it } },
+                    valueRange = 0.5f..1.5f,
+                    steps = 9,
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                // Speed / Rate slider
+                KeyValueRow("Speaking Speed", String.format("%.1fx", settings.ttsRate))
+                Slider(
+                    value = settings.ttsRate,
+                    onValueChange = { vm.updateSettings { s -> s.ttsRate = it } },
+                    valueRange = 0.5f..1.5f,
+                    steps = 9,
+                )
+
                 Spacer(Modifier.height(14.dp))
                 AuraTextField(
                     value = testLine,
                     onValueChange = { testLine = it },
                     placeholder = "Test sentence",
                     singleLine = false,
-                    minHeight = 70.dp,
+                    minHeight = 60.dp,
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    InkButton("Speak", { vm.speak(testLine) }, modifier = Modifier.weight(1f))
+                    InkButton("Play Sample", { vm.speak(testLine) }, modifier = Modifier.weight(1f))
                     SecondaryButton("Stop", { vm.stopSpeaking() }, modifier = Modifier.weight(1f))
                 }
             }
             Spacer(Modifier.height(20.dp))
+
+            if (showVoiceDialog) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showVoiceDialog = false },
+                    title = {
+                        Text("Select Speaking Voice (${voiceList.size})", color = mono.textPrimary)
+                    },
+                    text = {
+                        if (voiceList.isEmpty()) {
+                            Text("No TTS voices detected or engine initializing. Tap Google TTS to use default voice.", color = mono.textSecondary)
+                        } else {
+                            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 350.dp)) {
+                                items(voiceList.size) { idx ->
+                                    val v = voiceList[idx]
+                                    val isSelected = v.name == settings.ttsVoice
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                voiceName = v.name
+                                                vm.updateSettings { it.ttsVoice = v.name }
+                                                showVoiceDialog = false
+                                                vm.speak("Voice selected.")
+                                            }
+                                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                v.displayName,
+                                                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                                                color = if (isSelected) mono.accent else mono.textPrimary,
+                                            )
+                                            Text(v.locale, style = MonoStyleSmall, color = mono.textSecondary)
+                                        }
+                                        if (isSelected) {
+                                            Badge("Active", tone = ChipTone.Live)
+                                        }
+                                    }
+                                    if (idx < voiceList.size - 1) {
+                                        HorizontalDivider(color = mono.outline)
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        SecondaryButton("Close", { showVoiceDialog = false })
+                    },
+                )
+            }
         }
 
         item {

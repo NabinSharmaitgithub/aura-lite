@@ -16,13 +16,23 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.net.Socket
 
+/**
+ * The Android side of the LAN transport: which interfaces are mobile data, which addresses to
+ * show the user, network-change events, and the mDNS advert the bridge discovers.
+ *
+ * - Contract: every method is safe to call from any thread and never throws; a failing system
+ *   service degrades to "no information" (empty sets, no advert).
+ * - Change together: [SERVICE_TYPE] and the TXT keys with `aura-mcp-connect/src/lan.js`
+ *   (`SERVICE_TYPE`, `parseMdnsResponse`).
+ */
 internal class LanNetwork(context: Context, private val log: (String) -> Unit = { Log.i(TAG, it) }) {
 
     private val cm = context.getSystemService(ConnectivityManager::class.java)
     private val nsd = context.getSystemService(NsdManager::class.java)
     private val main = Handler(Looper.getMainLooper())
 
-    @Suppress("DEPRECATION")
+    /** Names of interfaces that currently carry mobile data (for example `rmnet_data0`). */
+    @Suppress("DEPRECATION") // allNetworks: the callback replacement needs state we'd only use here.
     fun cellularInterfaces(): Set<String> = runCatching {
         cm.allNetworks.mapNotNull { n ->
             val caps = cm.getNetworkCapabilities(n) ?: return@mapNotNull null
@@ -31,12 +41,17 @@ internal class LanNetwork(context: Context, private val log: (String) -> Unit = 
         }.toSet()
     }.getOrDefault(emptySet())
 
+    /**
+     * True when [socket] arrived on a mobile-data interface. Such peers are refused even with a
+     * private address: carriers put subscribers in private and `100.64/10` ranges too.
+     */
     fun arrivedOverCellular(socket: Socket): Boolean {
         val iface = runCatching { NetworkInterface.getByInetAddress(socket.localAddress) }.getOrNull()
             ?: return false
         return iface.name in cellularInterfaces()
     }
 
+    /** The phone's LAN IPv4 addresses (Wi-Fi, hotspot, USB tethering, VPN), for the MCP Center. */
     fun lanAddresses(): List<String> = runCatching {
         val cellular = cellularInterfaces()
         NetworkInterface.getNetworkInterfaces().toList()
@@ -52,6 +67,7 @@ internal class LanNetwork(context: Context, private val log: (String) -> Unit = 
     private val debounced = Runnable { changeListener?.invoke() }
     @Volatile private var changeListener: (() -> Unit)? = null
 
+    /** Calls [onChange] (on the main thread, debounced by 1 s) when a network appears, goes, or is re-addressed. */
     @Synchronized fun watch(onChange: () -> Unit) {
         unwatch()
         changeListener = onChange
@@ -64,6 +80,7 @@ internal class LanNetwork(context: Context, private val log: (String) -> Unit = 
             override fun onLost(network: Network) = poke()
             override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) = poke()
         }
+        // No INTERNET capability required: a Wi-Fi with no internet is still a fine LAN.
         val request = NetworkRequest.Builder()
             .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
@@ -81,6 +98,13 @@ internal class LanNetwork(context: Context, private val log: (String) -> Unit = 
 
     private var registration: NsdManager.RegistrationListener? = null
 
+    /**
+     * Advertises `_aura-mcp._tcp` on [port] with TXT `id=<deviceId>` and `proto=<protocol>`, replacing any
+     * earlier advert.
+     *
+     * - Fails: logs and carries on. The bridge also finds the phone by its saved address and by
+     *   scanning the subnet, so a missing advert only slows discovery.
+     */
     @Synchronized fun advertise(port: Int, deviceId: String) {
         stopAdvertising()
         val info = NsdServiceInfo().apply {

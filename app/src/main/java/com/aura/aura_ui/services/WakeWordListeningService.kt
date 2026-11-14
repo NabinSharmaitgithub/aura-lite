@@ -5,17 +5,20 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
+import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.util.Log
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.aura.aura_ui.data.prefs.AuraSettings
 import com.aura.aura_ui.notifications.AuraNotifications
+import com.aura.aura_ui.overlay.AuraOverlayService
 import com.aura.aura_ui.state.WakeWordState
-import com.aura.aura_ui.voice.VadGate
-import com.aura.aura_ui.voice.WakeWordEngine
+import com.aura.aura_ui.voice.SherpaKwsWakeWordDetector
+import com.aura.aura_ui.voice.WakeWordDetector
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -23,127 +26,167 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Offline wake word. Starts only when the user explicitly enables it (never from Application or
- * the accessibility service). Stops capture while a voice run uses the microphone, then resumes.
+ * Always-on offline wake word detection service.
+ *
+ * Runs as a foreground service with a quiet notification, listening for "Wake up AURA"
+ * via sherpa-onnx KWS. When detected, triggers haptic feedback, shows the overlay,
+ * and launches the voice assistant pipeline.
  */
 @AndroidEntryPoint
 class WakeWordListeningService : Service() {
 
     @Inject lateinit var settings: AuraSettings
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var job: Job? = null
-    @Volatile private var engine: WakeWordEngine? = null
-    @Volatile private var wakeState: WakeWordState = WakeWordState.STOPPED
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var detector: WakeWordDetector? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var resumeJob: Job? = null
 
     private fun setWakeState(state: WakeWordState) {
-        wakeState = state
+        _stateFlow.value = state
         currentState = state
     }
 
     override fun onCreate() {
         super.onCreate()
         AuraNotifications.ensureChannels(this)
+        acquireWakeLock()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!settings.wakeWordEnabled) {
-            stopSelf()
+            stopSelfSafely()
             return START_NOT_STICKY
         }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            stopSelf()
+            stopSelfSafely()
             return START_NOT_STICKY
         }
+
         startForeground(AuraNotifications.ID_WAKE, AuraNotifications.wakeWordNotification(this))
-        startDetection()
+        startDetector()
         return START_STICKY
     }
 
-    private fun startDetection() {
-        if (job?.isActive == true) return
+    private fun startDetector() {
+        resumeJob?.cancel()
         setWakeState(WakeWordState.STARTING)
-        job = scope.launch {
-            val loaded = WakeWordEngine.create(this@WakeWordListeningService)
-            if (loaded == null) {
-                // Model not bundled: never leave a microphone service running silently.
-                setWakeState(WakeWordState.STOPPING)
-                delay(800)
-                stopSelfSafely()
-                return@launch
-            }
-            engine = loaded
-            val sampleRate = 16000
-            val minBuffer = AudioRecord.getMinBufferSize(
-                sampleRate,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-            )
-            val record = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                sampleRate,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                maxOf(minBuffer, sampleRate / 5),
-            )
-            if (record.state != AudioRecord.STATE_INITIALIZED) {
-                stopSelfSafely()
-                return@launch
-            }
-            val vad = VadGate(settings.vadSensitivity)
-            val buffer = ShortArray(1600)
-            val floats = FloatArray(1600)
+
+        scope.launch(Dispatchers.IO) {
             try {
-                record.startRecording()
-                setWakeState(WakeWordState.DETECTING)
-                while (isActive && wakeState == WakeWordState.DETECTING) {
-                    val read = record.read(buffer, 0, buffer.size)
-                    if (read <= 0) continue
-                    // Feed every frame: keyword spotting needs continuous context, VAD only trims work.
-                    for (i in 0 until read) floats[i] = buffer[i] / 32768f
-                    val samples = if (read == floats.size) floats else floats.copyOf(read)
-                    val hit = engine?.accept(samples, sampleRate) == true
-                    if (hit) {
-                        setWakeState(WakeWordState.PAUSED_FOR_RUN)
-                        AssistantForegroundService.listen(this@WakeWordListeningService)
-                        break
+                if (detector == null) {
+                    detector = SherpaKwsWakeWordDetector(
+                        context = this@WakeWordListeningService,
+                        keywordsScore = settings.wakeWordScore,
+                        keywordsThreshold = settings.wakeWordThreshold,
+                    ).apply {
+                        setOnWakeWordDetected { keyword ->
+                            onWakePhraseTriggered(keyword)
+                        }
                     }
                 }
-            } finally {
-                runCatching { record.stop() }
-                runCatching { record.release() }
-            }
-            // Give the voice run time to take the microphone, then resume detection.
-            if (wakeState == WakeWordState.PAUSED_FOR_RUN) {
-                delay(25_000)
+                detector?.start()
                 setWakeState(WakeWordState.DETECTING)
-                if (settings.wakeWordEnabled) startDetection()
+                Log.i(TAG, "✅ Wake word service active & listening for 'Wake up AURA'")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to start wake word detector: ${e.message}", e)
+                setWakeState(WakeWordState.STOPPED)
+                stopSelfSafely()
+            }
+        }
+    }
+
+    private fun onWakePhraseTriggered(keyword: String) {
+        Log.i(TAG, "🎯 WAKE PHRASE TRIGGERED: $keyword")
+        vibrateFeedback()
+
+        setWakeState(WakeWordState.PAUSED_FOR_RUN)
+        detector?.stop()
+
+        scope.launch(Dispatchers.Main) {
+            // Show assistant overlay and listen via Figma wake screen
+            if (settings.companionEnabled && android.provider.Settings.canDrawOverlays(this@WakeWordListeningService)) {
+                AuraOverlayService.showAndListen(this@WakeWordListeningService, source = "wake_word")
+            } else {
+                AssistantForegroundService.listen(this@WakeWordListeningService)
+            }
+
+            // Schedule detection resumption after voice turn finishes
+            scheduleResumption()
+        }
+    }
+
+    private fun scheduleResumption() {
+        resumeJob?.cancel()
+        resumeJob = scope.launch {
+            // Wait while the voice interaction takes place (e.g. up to 20 seconds of silence/completion)
+            delay(15_000)
+            if (settings.wakeWordEnabled && isActive) {
+                Log.i(TAG, "🔄 Resuming wake word detection after voice interaction")
+                startDetector()
             } else {
                 setWakeState(WakeWordState.STOPPED)
             }
         }
     }
 
+    private fun vibrateFeedback() {
+        runCatching {
+            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(120)
+            }
+        }
+    }
+
+    private fun acquireWakeLock() {
+        runCatching {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "aura:wake_word_service_lock",
+            ).apply {
+                setReferenceCounted(false)
+                acquire(60 * 60 * 1000L) // 1 hour safety cap
+            }
+        }
+    }
+
     private fun stopSelfSafely() {
+        setWakeState(WakeWordState.STOPPED)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     override fun onDestroy() {
         setWakeState(WakeWordState.STOPPED)
-        job?.cancel()
-        engine?.release()
-        engine = null
+        resumeJob?.cancel()
+        detector?.stop()
+        detector?.release()
+        detector = null
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        private const val TAG = "WakeWordService"
+
+        private val _stateFlow = MutableStateFlow(WakeWordState.STOPPED)
+        val stateFlow: StateFlow<WakeWordState> = _stateFlow.asStateFlow()
+
         @Volatile var currentState: WakeWordState = WakeWordState.STOPPED
             private set
 

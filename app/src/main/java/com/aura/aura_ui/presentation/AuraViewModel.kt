@@ -415,11 +415,14 @@ class AuraViewModel @Inject constructor(
     // ── Settings ────────────────────────────────────────────────────────────────
 
     fun updateSettings(block: (AuraSettings) -> Unit) {
-        val before = prefs.snapshot().ttsVoice
+        val snap = prefs.snapshot()
+        val beforeVoice = snap.ttsVoice
+        val beforePitch = snap.ttsPitch
+        val beforeRate = snap.ttsRate
         block(prefs)
         // A saved TTS voice/engine change must take effect on the live engine immediately,
         // not only on the next `speak()` call.
-        if (prefs.ttsVoice != before) {
+        if (prefs.ttsVoice != beforeVoice || prefs.ttsPitch != beforePitch || prefs.ttsRate != beforeRate) {
             runCatching { voice.refreshTtsVoice() }
         }
     }
@@ -826,6 +829,8 @@ class AuraViewModel @Inject constructor(
     }
 
     fun ttsVoices(): List<String> = voice.voices()
+    fun ttsVoiceList(): List<com.aura.aura_ui.voice.AuraVoiceInfo> = voice.getVoiceList()
+    fun previewVoice(sampleText: String = "Hello! I am Aura, your personal AI assistant.") = voice.previewVoice(sampleText)
 
     fun stopSpeaking() {
         voice.stopSpeaking()

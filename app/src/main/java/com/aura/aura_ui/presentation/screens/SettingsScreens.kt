@@ -600,6 +600,26 @@ fun PermissionsHealthScreen(vm: AuraViewModel) {
                     color = mono.textSecondary,
                 )
             }
+            if (com.aura.aura_ui.utils.MiuiHelper.isXiaomiOrRedmi()) {
+                Spacer(Modifier.height(18.dp))
+                SectionHeader("Xiaomi / Redmi Keep-Alive")
+                SurfaceCard {
+                    Text(
+                        "On Redmi and Xiaomi devices, MIUI automatically turns off accessibility permissions when the app closes or is swiped from Recents unless Autostart is allowed and Battery Saver is set to 'No restrictions'.",
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = mono.textSecondary,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SecondaryButton("Enable Autostart", {
+                            com.aura.aura_ui.utils.MiuiHelper.openAutostartSettings(context)
+                        }, modifier = Modifier.weight(1f))
+                        SecondaryButton("Battery: No Restrictions", {
+                            com.aura.aura_ui.utils.MiuiHelper.openBatterySaverSettings(context)
+                        }, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
         }
     }
 }

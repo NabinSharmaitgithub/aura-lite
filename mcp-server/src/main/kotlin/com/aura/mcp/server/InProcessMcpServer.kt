@@ -1,53 +1,209 @@
 package com.aura.mcp.server
 
-import com.aura.mcp.bridge.ToolResult
-import com.aura.mcp.tools.McpToolRegistry
-import com.aura.mcp.tools.ToolCatalog
-import com.aura.mcp.bridge.ToolDefinition
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import com.aura.mcp.bridge.ContactsBridge
+import com.aura.mcp.bridge.DeepLinkBridge
+import com.aura.mcp.bridge.FilesBridge
+import com.aura.mcp.bridge.NoOpSessionLogSink
+import com.aura.mcp.bridge.SessionLogSink
+import com.aura.mcp.bridge.DeviceBridge
+import com.aura.mcp.bridge.McpAuditLogger
+import com.aura.mcp.bridge.McpScope
+import com.aura.mcp.bridge.MediaBridge
+import com.aura.mcp.bridge.NoOpAuditLogger
+import com.aura.mcp.bridge.NotificationBridge
+import com.aura.mcp.bridge.PerceptionBridge
+import com.aura.mcp.bridge.ScreenshotBridge
+import com.aura.mcp.bridge.SystemIntentBridge
+import com.aura.mcp.bridge.TokenPrincipal
+import com.aura.mcp.bridge.UiTreeBridge
+import com.aura.mcp.bridge.BrowserBridge
+import com.aura.mcp.bridge.WebSearchBridge
+import io.modelcontextprotocol.kotlin.sdk.server.Server
+import io.modelcontextprotocol.kotlin.sdk.shared.Transport
+import io.modelcontextprotocol.kotlin.sdk.shared.TransportSendOptions
+import io.modelcontextprotocol.kotlin.sdk.types.JSONRPCMessage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
- * The local agent's client. No sockets, no TLS, no auth: it calls the same registry that
- * external clients reach over LAN HTTPS, so the contract cannot drift.
+ * In-process bridge between the on-device agent (an MCP **client**) and the
+ * on-device MCP **server**, without a socket or a pairing handshake.
+ *
+ * The MCP Kotlin SDK has no in-memory transport, so we implement the [Transport] interface as a linked pair: each end's [send]
+ * delivers the message to the *other* end's registered `onMessage` handler.
+ * The agent connects its [Client] to the [clientTransport]; a dedicated
+ * [Server] (built from [McpServerBuilder] with the SAME app bridges as the
+ * external LAN server) is connected to the server end.
+ *
+ * **Why this reuses the security model for free:** the server-end transport
+ * delivers every inbound message inside a coroutine carrying an
+ * [McpPrincipalElement]. MCP tool handlers are `suspend` lambdas that inherit
+ * that context, so `scopedTool`'s `currentMcpPrincipalOrNull()` sees the
+ * synthetic full-scope "internal-agent" principal — scope checks pass and the
+ * [SensitivePolicy] gate + audit still run, unchanged. No SDK patching.
  */
-interface McpClient {
-    suspend fun initialize(): JsonObject
-    fun listTools(): List<ToolDefinition>
-    suspend fun callTool(name: String, args: JsonObject): ToolResult
-    fun listResources(): JsonArray
-    fun readResource(uri: String): JsonObject?
-    fun listPrompts(): JsonArray
-    fun getPrompt(name: String, arguments: JsonObject): JsonObject?
+class InMemoryMcpTransport internal constructor(
+    private val deliveryContext: CoroutineContext,
+    private val scope: CoroutineScope,
+) : Transport {
+
+    /** The opposite end of the pair; [send] hands messages to this peer. */
+    internal lateinit var peer: InMemoryMcpTransport
+
+    private var messageHandler: (suspend (JSONRPCMessage) -> Unit)? = null
+    private var closeHandler: (() -> Unit)? = null
+
+    @Suppress("unused")
+    private var errorHandler: ((Throwable) -> Unit)? = null
+
+    private val closed = AtomicBoolean(false)
+
+    override suspend fun start() {
+        // No handshake needed for an in-process pipe; handlers are wired by the
+        // owning Client/Server via onMessage() before any traffic flows.
+    }
+
+    override suspend fun send(message: JSONRPCMessage, options: TransportSendOptions?) {
+        if (closed.get()) return
+        peer.deliver(message)
+    }
+
+    /**
+     * Deliver an inbound message to THIS end's consumer, on [scope] within
+     * [deliveryContext]. Async launch (rather than inline invocation) prevents
+     * request→response re-entrancy from recursing on a single coroutine.
+     */
+    private fun deliver(message: JSONRPCMessage) {
+        val handler = messageHandler ?: return
+        scope.launch(deliveryContext) { handler(message) }
+    }
+
+    override suspend fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        closeHandler?.invoke()
+        if (!peer.closed.get()) peer.close()
+    }
+
+    override fun onClose(block: () -> Unit) {
+        closeHandler = block
+    }
+
+    override fun onError(block: (Throwable) -> Unit) {
+        errorHandler = block
+    }
+
+    override fun onMessage(block: suspend (JSONRPCMessage) -> Unit) {
+        messageHandler = block
+    }
 }
 
-class InProcessMcpServer(private val registry: McpToolRegistry) {
+/**
+ * Handle for a live in-process MCP server bound to the agent. Hold it for the
+ * agent session lifetime; [close] tears down the server + transport scope.
+ */
+class InProcessMcpHandle internal constructor(
+    /** Give this to Koog's `McpToolRegistryProvider.fromTransport(...)`. */
+    val clientTransport: Transport,
+    private val server: Server,
+    private val scope: CoroutineScope,
+) {
+    suspend fun close() {
+        runCatching { server.close() }
+        scope.cancel()
+    }
+}
 
-    fun listTools(): List<ToolDefinition> = ToolCatalog.all
+/**
+ * Builds a dedicated [Server] (sharing the supplied app bridges with the
+ * external LAN server) and connects it to an in-memory transport pair.
+ * Returns the client-side transport wrapped in an [InProcessMcpHandle].
+ *
+ * The single public entry point :app needs — everything `internal`
+ * (McpServerBuilder, McpPrincipalElement, scope wiring) stays in this module.
+ */
+object InProcessMcpServer {
 
-    suspend fun call(name: String, args: JsonObject): ToolResult = registry.execute(name, args)
+    private const val SERVER_NAME = "aura-inprocess"
+    private const val SERVER_VERSION = "1.0.0"
 
-    fun initialize(): JsonObject = McpRpc.initializeResult()
+    /** The trusted identity for first-party on-device agent calls. */
+    private val internalPrincipal = TokenPrincipal(
+        tokenId = "internal-agent",
+        scopes = setOf(McpScope.READ, McpScope.WRITE),
+        label = "on-device-agent",
+    )
 
-    fun listResources(): JsonArray = McpResources.list()
+    suspend fun connect(
+        deviceBridge: DeviceBridge,
+        screenshotBridge: ScreenshotBridge,
+        uiTreeBridge: UiTreeBridge,
+        perceptionBridge: PerceptionBridge,
+        webSearchBridge: WebSearchBridge,
+        deepLinkBridge: DeepLinkBridge,
+        notificationBridge: NotificationBridge,
+        mediaBridge: MediaBridge,
+        systemIntentBridge: SystemIntentBridge,
+        contactsBridge: ContactsBridge? = null,
+        filesBridge: FilesBridge? = null,
+        browserBridge: BrowserBridge? = null,
+        auditLogger: McpAuditLogger = NoOpAuditLogger,
+        /** Host app package — its overlay's accessibility events are ignored while settling (E1). */
+        ownPackageName: String? = null,
+        /** Spec 2026-07-31 — control lock; forwarded to [McpServerBuilder.build]. */
+        pausedByHuman: (() -> Boolean)? = null,
+        /** Forwarded to [McpServerBuilder.build]. */
+        readScreenImage: () -> Boolean = { false },
+        /** Forwarded to [McpServerBuilder.build]. */
+        trailSink: ToolTrailSink = ToolTrailSink.NOOP,
+        /** Forwarded to [McpServerBuilder.build]; the caller keeps it to log its counters. */
+        actionGuard: ActionGuard = ActionGuard(),
+        /** Forwarded to [McpServerBuilder.build]; hears the `end_session` the server accepted. */
+        sessionLogSink: SessionLogSink = NoOpSessionLogSink,
+    ): InProcessMcpHandle {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    fun readResource(uri: String): JsonObject? = McpResources.read(uri)
+        val server = McpServerBuilder.build(
+            serverName = SERVER_NAME,
+            version = SERVER_VERSION,
+            deviceBridge = deviceBridge,
+            screenshotBridge = screenshotBridge,
+            uiTreeBridge = uiTreeBridge,
+            perceptionBridge = perceptionBridge,
+            webSearchBridge = webSearchBridge,
+            deepLinkBridge = deepLinkBridge,
+            notificationBridge = notificationBridge,
+            mediaBridge = mediaBridge,
+            systemIntentBridge = systemIntentBridge,
+            contactsBridge = contactsBridge,
+            filesBridge = filesBridge,
+            browserBridge = browserBridge,
+            auditLogger = auditLogger,
+            ownPackageName = ownPackageName,
+            pausedByHuman = pausedByHuman,
+            readScreenImage = readScreenImage,
+            trailSink = trailSink,
+            actionGuard = actionGuard,
+            sessionLogSink = sessionLogSink,
+        )
 
-    fun listPrompts(): JsonArray = McpPrompts.list()
+        // Client end runs in a plain context; server end carries the principal
+        // so scopedTool() attributes calls and passes scope while SensitivePolicy
+        // still hard-blocks sensitive actions.
+        val clientTransport = InMemoryMcpTransport(EmptyCoroutineContext, scope)
+        val serverTransport = InMemoryMcpTransport(McpPrincipalElement(internalPrincipal), scope)
+        clientTransport.peer = serverTransport
+        serverTransport.peer = clientTransport
 
-    fun getPrompt(name: String, arguments: JsonObject): JsonObject? = McpPrompts.get(name, arguments)
+        // Bind the server to its end. The SDK registers onMessage/onClose then
+        // calls start(); returns once listening (does not block on the client).
+        server.createSession(serverTransport)
 
-    fun asClient(): McpClient = object : McpClient {
-        override suspend fun initialize(): JsonObject = this@InProcessMcpServer.initialize()
-        override fun listTools(): List<ToolDefinition> = this@InProcessMcpServer.listTools()
-        override suspend fun callTool(name: String, args: JsonObject): ToolResult =
-            this@InProcessMcpServer.call(name, args)
-        override fun listResources(): JsonArray = this@InProcessMcpServer.listResources()
-        override fun readResource(uri: String): JsonObject? = this@InProcessMcpServer.readResource(uri)
-        override fun listPrompts(): JsonArray = this@InProcessMcpServer.listPrompts()
-        override fun getPrompt(name: String, arguments: JsonObject): JsonObject? =
-            this@InProcessMcpServer.getPrompt(name, arguments)
+        return InProcessMcpHandle(clientTransport, server, scope)
     }
 }

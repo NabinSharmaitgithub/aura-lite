@@ -1,170 +1,167 @@
 package com.aura.mcp.bridge
 
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import com.aura.mcp.tools.ToolStage
-
 /**
- * Uniform result envelope for every tool, in-process and over MCP.
+ * Port (Hexagonal Architecture term) into the host Android app.
  *
- * { ok, changed, observed, error, meta }
- */
-data class ToolError(
-    val code: String,
-    val message: String,
-    val fix: String? = null,
-) {
-    fun toJson(): JsonObject = buildJsonObject {
-        put("code", code)
-        put("message", message)
-        if (fix != null) put("fix", fix)
-    }
-
-    companion object {
-        const val PERMISSION_DENIED = "permission_denied"
-        const val NOT_FOUND = "not_found"
-        const val AMBIGUOUS = "ambiguous"
-        const val BLOCKED_APP = "blocked_app"
-        const val TIMEOUT = "timeout"
-        const val STALE_SCREEN = "stale_screen"
-        const val UNSUPPORTED = "unsupported"
-        const val INTERNAL = "internal"
-        const val CANCELLED = "cancelled"
-        const val APPROVAL_DENIED = "approval_denied"
-        const val POLICY_BLOCKED = "policy_blocked"
-        const val SCOPE_DENIED = "scope_denied"
-        const val PAUSED_BY_USER = "paused_by_user"
-        const val ACTION_GUARD = "action_guard"
-
-        fun permissionDenied(message: String, fix: String? = null) =
-            ToolError(PERMISSION_DENIED, message, fix)
-
-        fun notFound(message: String) = ToolError(NOT_FOUND, message)
-        fun blocked(pkg: String) = ToolError(BLOCKED_APP, "AURA is not allowed to act in $pkg", "settings/restricted_apps")
-        fun timeout(message: String) = ToolError(TIMEOUT, message)
-        fun unsupported(message: String) = ToolError(UNSUPPORTED, message)
-        fun internal(message: String) = ToolError(INTERNAL, message)
-        fun policyBlocked(message: String, fix: String? = null) = ToolError(POLICY_BLOCKED, message, fix)
-        fun scopeDenied(message: String) = ToolError(SCOPE_DENIED, message)
-        fun paused(message: String = "Paused by user") = ToolError(PAUSED_BY_USER, message)
-        fun actionGuard(message: String, fix: String? = null) = ToolError(ACTION_GUARD, message, fix)
-    }
-}
-
-data class ToolResult(
-    val ok: Boolean,
-    val changed: Boolean = false,
-    val observed: JsonObject? = null,
-    val error: ToolError? = null,
-    val meta: JsonObject? = null,
-    /** Position in the enforcement pipeline that produced this result. */
-    val stage: ToolStage = ToolStage.DONE,
-) {
-    fun toJson(): JsonObject = buildJsonObject {
-        put("ok", ok)
-        put("changed", changed)
-        put("observed", observed ?: JsonNull)
-        put("error", error?.toJson() ?: JsonNull)
-        put("meta", meta ?: JsonNull)
-        put("stage", stage.wire)
-    }
-
-    companion object {
-        fun ok(
-            changed: Boolean = false,
-            observed: JsonObject? = null,
-            meta: JsonObject? = null,
-            stage: ToolStage = ToolStage.DONE,
-        ) = ToolResult(true, changed, observed, null, meta, stage)
-
-        fun fail(
-            error: ToolError,
-            observed: JsonObject? = null,
-            stage: ToolStage = ToolStage.FAILED,
-        ) = ToolResult(false, false, observed, error, null, stage)
-
-        fun permission(message: String, fix: String? = null) =
-            fail(ToolError.permissionDenied(message, fix))
-    }
-}
-
-/**
- * Every device capability the tool surface needs is reached through this bridge.
- * The app implements it; :mcp-server never links against accessibility or Compose.
+ * The `:mcp-server` module declares **what** it needs from the device side.
+ * The `:app` module provides the **how** by binding this interface to a real
+ * `AuraAccessibilityService`-backed implementation. This is the only doorway
+ * between the two modules — `:mcp-server` must never reference any concrete
+ * Android service class directly.
+ *
+ * Gesture-style methods are fire-and-forget at the OS level: a `true` return
+ * means the call dispatched without throwing, not that the OS has finished the
+ * gesture. Real per-call acknowledgement (matching the existing Phase-7 ACK
+ * system on the Python side) is deferred to a later phase.
+ *
+ * Implementations must be **thread-safe** — MCP tool dispatch happens on Ktor's
+ * IO dispatcher, but the underlying accessibility APIs require main-thread
+ * dispatch. Implementations marshal as needed.
  */
 interface DeviceBridge {
-    suspend fun execute(tool: String, args: JsonObject): ToolResult
 
-    /** Human-readable foreground app package, used by restricted-app checks. */
-    suspend fun foregroundPackage(): String?
+    // ── Phase 2 surface ─────────────────────────────────────────────────────
 
-    /** Optional listener fan-out for watch_device_events. */
-    suspend fun startWatching(events: List<String>)
-    suspend fun stopWatching()
+    fun performTap(x: Int, y: Int): Boolean
+
+    /**
+     * How the last [performTap] reached the app: [TapVia.GESTURE] (the app reacted to the
+     * touch), [TapVia.SEMANTIC] (it ignored the touch and an accessibility click went to the
+     * node under the point), or [TapVia.UNVERIFIED] (the touch was delivered and nothing
+     * visibly reacted). Null when the host cannot tell.
+     */
+    fun lastTapVia(): TapVia? = null
+
+    fun performHome(): Boolean
+    fun performBack(): Boolean
+    fun adjustVolume(direction: VolumeDirection): Boolean
+    fun getDeviceStatus(): DeviceStatus
+
+    // ── Phase 3 surface ─────────────────────────────────────────────────────
+
+    /** Tap twice in quick succession at the same point. */
+    fun performDoubleTap(x: Int, y: Int): Boolean
+
+    /** Press-and-hold at a point for [durationMs] milliseconds. */
+    fun performLongPress(x: Int, y: Int, durationMs: Long): Boolean
+
+    /** Swipe from (x1, y1) to (x2, y2) over [durationMs] milliseconds. */
+    fun performSwipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long): Boolean
+
+    /**
+     * Trace each stroke in turn, one finger, lifting between strokes: drawing, signatures, drags.
+     *
+     * - Contract: points are pixels; each stroke takes [durationMs] to trace after a [holdMs]
+     *   press at its first point (0 = start moving at once). True only if every stroke landed.
+     */
+    fun performStrokes(strokes: List<List<Pair<Int, Int>>>, durationMs: Long, holdMs: Long): Boolean = false
+
+    /** Scroll in [direction] (UP/DOWN/LEFT/RIGHT) — a 50% screen-distance swipe. */
+    fun performScroll(direction: ScrollDirection): Boolean
+
+    /** Inject the Recent Apps system action. */
+    fun performRecents(): Boolean
+
+    /** Inject the Enter key on the currently focused editor. */
+    fun pressEnter(): Boolean
+
+    /** Type [text] into the currently focused editable field. */
+    fun typeText(text: String): Boolean
+
+    /**
+     * Type [text] into the editable field located at full-resolution ([x], [y]) — the
+     * center of a perceived element. Targeting the exact field (rather than "whatever is
+     * focused") fixes typing into the wrong box on multi-field forms and avoids opening
+     * the soft keyboard. Defaulted to [typeText] so existing test doubles keep compiling;
+     * the real app binding overrides it.
+     */
+    fun typeTextAt(text: String, x: Int, y: Int): Boolean = typeText(text)
+
+    /**
+     * Whether AURA's own keyboard (the IME used to type into apps that expose no editable
+     * accessibility node — React Native / Flutter / canvas) is enabled in system settings.
+     * When false and a type_text fails, the tool tells the agent/user to enable it once.
+     * Defaulted to true so test doubles and non-Android bridges are unaffected.
+     */
+    fun isTextInjectionKeyboardEnabled(): Boolean = true
+
+    /**
+     * Restore normal soft-keyboard behaviour after automation suppressed it
+     * (typing hides the IME so it can't obscure perception). Called by
+     * `end_session` so a finished task hands the keyboard back immediately;
+     * the accessibility service's inactivity watchdog is the backstop for
+     * runs that never end cleanly.
+     */
+    fun restoreKeyboard(): Boolean
+
+    /** Launch the app with the given Android [packageName]. */
+    fun launchApp(packageName: String): Boolean
+
+    /** Resolve a human-readable [query] to an [AppLookupResult]. */
+    fun lookupApp(query: String): AppLookupResult
+
+    /**
+     * The clipboard's text, or null when it is empty or Android refuses the read (Android 10+
+     * lets only the focused app and the default keyboard read it).
+     */
+    fun readClipboard(): String? = null
+
+    /** Puts [text] on the clipboard; false when the host cannot. */
+    fun writeClipboard(text: String): Boolean = false
+
+    /** Lock the device screen immediately. */
+    fun performLock(): Boolean = false
+
+    /** Unlock the device: wake screen, dismiss keyguard, and enter optional PIN. */
+    suspend fun performUnlock(pin: String? = null): Boolean = false
 }
 
-data class ApprovalRequest(
-    val tool: String,
-    val description: String,
-    val args: JsonObject,
-    val packageName: String?,
+enum class VolumeDirection { UP, DOWN, MUTE }
+
+enum class ScrollDirection { UP, DOWN, LEFT, RIGHT }
+
+/**
+ * Coarse-grained device state surfaced through the `get_device_status` MCP tool.
+ *
+ * Kept intentionally small — richer fields (battery, network state, foreground
+ * app) can be added later without breaking existing callers because the wire
+ * format is JSON.
+ */
+data class DeviceStatus(
+    val accessibilityServiceRunning: Boolean,
+    val screenWidthPx: Int,
+    val screenHeightPx: Int,
+    val androidApiLevel: Int,
+    val deviceModel: String,
+    // Foreground app the accessibility service currently sees. Null when the
+    // service is off or the top window has no readable package — every caller
+    // treats null as "unknown" and degrades to pre-foreground behaviour.
+    val foregroundPackage: String? = null,
+    val foregroundActivity: String? = null,
 )
 
-/** Returns true when the user approved. Implemented by the app with a notification. */
-fun interface ApprovalGate {
-    suspend fun approve(request: ApprovalRequest): Boolean
-}
+/**
+ * Result of resolving a human-readable app name to an installed package.
+ *
+ * Mirrors the shape of the Python `lookup_app` tool so callers don't need to
+ * relearn the schema. `candidates` is ordered by match-confidence (best first).
+ */
+data class AppLookupResult(
+    val found: Boolean,
+    val packageName: String,
+    val appName: String,
+    val candidates: List<AppCandidate>,
+    val error: String?,
+)
 
-/** Per-app restriction list consulted before every mutating dispatch. */
-interface RestrictedAppsStore {
-    fun isBlocked(packageName: String): Boolean
-    fun blockedPackages(): Set<String>
-}
+data class AppCandidate(
+    val packageName: String,
+    val appName: String,
+)
 
-/** Default: nothing blocked (used by tests and headless builds). */
-object AllowAllRestrictedApps : RestrictedAppsStore {
-    override fun isBlocked(packageName: String) = false
-    override fun blockedPackages(): Set<String> = emptySet()
-}
-
-/** A tool definition is data, so the same object feeds MCP tools/list and the UI. */
-data class ToolDefinition(
-    val name: String,
-    val description: String,
-    val inputSchema: JsonObject,
-    val domain: ToolDomain,
-    val mutating: Boolean = false,
-    val risky: Boolean = false,
-) {
-    fun toJson(): JsonObject = buildJsonObject {
-        put("name", name)
-        put("description", description)
-        put("inputSchema", inputSchema)
-    }
-}
-
-enum class ToolDomain(val label: String) {
-    UI("Interface"),
-    APPS("Apps"),
-    DATA("Data"),
-    SYSTEM("System"),
-    MEDIA("Media"),
-    NOTIFICATIONS("Notifications"),
-    BROWSER("Browser"),
-    PERCEPTION("Perception"),
-    WEB("Web"),
-    SESSION("Session"),
-}
-
-/** Marker for bridge capabilities that are not wired on this build. */
-object UnavailableBridge : DeviceBridge {
-    override suspend fun execute(tool: String, args: JsonObject): ToolResult =
-        ToolResult.fail(ToolError.unsupported("$tool is not available on this build"))
-
-    override suspend fun foregroundPackage(): String? = null
-    override suspend fun startWatching(events: List<String>) = Unit
-    override suspend fun stopWatching() = Unit
+/** See [DeviceBridge.lastTapVia]. [wire] is the value tool results carry. */
+enum class TapVia(val wire: String) {
+    GESTURE("gesture"),
+    SEMANTIC("accessibility_click"),
+    UNVERIFIED("no_visible_reaction"),
 }

@@ -189,8 +189,13 @@ fun AuraHomeScreen(
             if (!permissions.accessibility) {
                 item {
                     Spacer(Modifier.height(16.dp))
+                    val isRedmi = com.aura.aura_ui.utils.MiuiHelper.isXiaomiOrRedmi()
                     PermissionBanner(
-                        text = "Accessibility is off, so AURA cannot read or touch the screen.",
+                        text = if (isRedmi) {
+                            "Accessibility is off. On Redmi/MIUI, enable Autostart & Battery 'No Restrictions' so MIUI doesn't revoke it on reopen."
+                        } else {
+                            "Accessibility is off, so AURA cannot read or touch the screen."
+                        },
                         action = "Fix",
                         onAction = { onNavigate(Routes.SETTINGS_PERMISSIONS) },
                     )
@@ -283,9 +288,9 @@ fun AuraHomeScreen(
                         onClick = { onNavigate(Routes.SETTINGS_PERMISSIONS) },
                     )
                     StatusChip(
-                        label = if (settings.wakeWordEnabled) "Wake word" else "Voice",
+                        label = if (settings.wakeWordEnabled) "Wake: ON" else "Wake word",
                         tone = if (settings.wakeWordEnabled) ChipTone.Live else ChipTone.Idle,
-                        onClick = { onNavigate(Routes.AGENT_VOICE) },
+                        onClick = { onNavigate(Routes.AGENT_WAKE_WORD) },
                     )
                     StatusChip(
                         label = if (health.running) "MCP" else "MCP off",

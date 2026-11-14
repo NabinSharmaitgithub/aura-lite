@@ -1,5 +1,6 @@
 package com.aura.mcp.bridge
 
+import com.aura.mcp.server.Toolset
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -7,20 +8,46 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+/**
+ * One computer the user has approved on the device.
+ *
+ * Doctrine (TODO.md, settled 2026-07-14): [label]/[host]/[platform] are
+ * SELF-DECLARED display data from the bridge's init packet — they are shown
+ * to the user but every trust decision keys off [token] alone.
+ */
 @Serializable
 data class TrustedClient(
     val token: String,
     val label: String = "Unknown client",
     val host: String? = null,
     val platform: String? = null,
+    /** 0 = approved before metadata existed (migrated legacy token). */
     val firstApprovedAt: Long = 0L,
     val lastConnectedAt: Long = 0L,
+    /**
+     * [Toolset] names this computer is given; null = [Toolset.DEFAULT_REMOTE]. Names, not the
+     * enum, so a stored group this build doesn't know is skipped instead of failing the decode
+     * of the whole ledger (which would un-trust every computer).
+     */
     val toolsets: List<String>? = null,
 ) {
-    val enabledToolsets: Set<String> get() = (toolsets?.toSet() ?: setOf("CORE", "ASSISTANT", "BROWSER"))
+    /** The groups to register for this computer's next session. */
+    val enabledToolsets: Set<Toolset> get() = Toolset.parse(toolsets)
+
+    /** Short display id — matches the audit log's tokenId, never the secret. */
     val tokenId: String get() = token.take(8)
 }
 
+/**
+ * The trust ledger behind WebRTC auto-approve and the Trusted Devices screen:
+ * token → metadata, persisted as one JSON blob. Persistence is injected
+ * (load/save lambdas) so the store is JVM-testable; on device it's backed by
+ * the same SharedPreferences the legacy bare-token StringSet lived in, and
+ * that legacy set is migrated on first read (metadata unknown, epoch 0).
+ *
+ * Exposes a [StateFlow] snapshot for the Compose screen. All mutations are
+ * synchronized — callers are the DataChannel callback thread and the UI.
+ */
 class TrustedClientsStore(
     private val load: () -> String?,
     private val save: (String) -> Unit,
@@ -35,6 +62,7 @@ class TrustedClientsStore(
     fun isTrusted(token: String): Boolean =
         token.isNotEmpty() && _clients.value.any { it.token == token }
 
+    /** First-time approval from the on-device dialog. */
     fun approve(token: String, label: String?, host: String?, platform: String?, nowMillis: Long) {
         if (token.isEmpty()) return
         synchronized(lock) {
@@ -52,6 +80,10 @@ class TrustedClientsStore(
         }
     }
 
+    /**
+     * Silent reconnect of an already-trusted token: bump last-connected and
+     * refresh the self-declared display fields (hostname/OS can change).
+     */
     fun touch(token: String, label: String?, host: String?, platform: String?, nowMillis: Long) {
         synchronized(lock) {
             val existing = _clients.value.firstOrNull { it.token == token } ?: return
@@ -69,21 +101,26 @@ class TrustedClientsStore(
         }
     }
 
-    fun setToolsets(token: String, toolsets: Set<String>) {
+    /** Which tool groups this computer gets. Applies from its next connect. */
+    fun setToolsets(token: String, toolsets: Set<Toolset>) {
         synchronized(lock) {
             persist(
                 _clients.value.map { client ->
                     if (client.token != token) client
-                    else client.copy(toolsets = (toolsets + "CORE").sorted())
+                    else client.copy(toolsets = (toolsets + Toolset.CORE).map { it.name }.sorted())
                 },
             )
         }
     }
 
+    /** Un-trust one computer — its next connect shows the approval dialog again. */
     fun revoke(token: String) {
-        synchronized(lock) { persist(_clients.value.filterNot { it.token == token }) }
+        synchronized(lock) {
+            persist(_clients.value.filterNot { it.token == token })
+        }
     }
 
+    /** Un-trust every computer. */
     fun revokeAll() {
         synchronized(lock) { persist(emptyList()) }
     }
@@ -96,8 +133,11 @@ class TrustedClientsStore(
     private fun readInitial(): List<TrustedClient> {
         val raw = load()
         if (raw != null) {
-            return runCatching { json.decodeFromString<List<TrustedClient>>(raw) }.getOrElse { emptyList() }
+            return runCatching { json.decodeFromString<List<TrustedClient>>(raw) }
+                .getOrElse { emptyList() }
         }
+        // First run on the new format: import legacy bare tokens (trusted
+        // before metadata existed), and persist so migration happens once.
         val legacy = runCatching { loadLegacyTokens() }.getOrElse { emptySet() }
         if (legacy.isEmpty()) return emptyList()
         val migrated = legacy.map { TrustedClient(token = it) }

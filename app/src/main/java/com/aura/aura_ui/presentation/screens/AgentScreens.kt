@@ -138,8 +138,14 @@ fun AgentHubScreen(vm: AuraViewModel, onNavigate: (String) -> Unit) {
             Spacer(Modifier.height(16.dp))
             GroupedList(header = "Voice") {
                 GroupedRow(
-                    title = "Voice settings",
-                    subtitle = if (settings.wakeWordEnabled) "Wake word is on" else "Wake word is off",
+                    title = "Wake word",
+                    subtitle = if (settings.wakeWordEnabled) "“Wake up AURA” is active" else "Continuous offline detection is off",
+                    icon = Icons.Outlined.Mic,
+                    onClick = { onNavigate(Routes.AGENT_WAKE_WORD) },
+                )
+                GroupedRow(
+                    title = "Voice & speech",
+                    subtitle = "TTS voices, Silero VAD, and speech recognition",
                     icon = Icons.Outlined.SmartToy,
                     onClick = { onNavigate(Routes.AGENT_VOICE) },
                     isLast = true,

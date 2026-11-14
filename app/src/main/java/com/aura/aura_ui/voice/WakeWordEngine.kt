@@ -14,9 +14,7 @@ import kotlinx.coroutines.withContext
  * Offline wake word via sherpa-onnx keyword spotting.
  *
  * Default phrase target: "Wake up AURA" (configured via assets/kws/keywords.txt in the
- * bundled sherpa-onnx KWS model). The model files live in assets/kws and are copied to the
- * files dir on first use. If they are absent the engine reports [available] = false and the
- * wake service never starts, so a missing model can never strand a microphone foreground service.
+ * bundled sherpa-onnx KWS model). Supports both int8 quantized and fp32 model variants.
  */
 class WakeWordEngine private constructor(
     private val spotter: KeywordSpotter,
@@ -42,36 +40,39 @@ class WakeWordEngine private constructor(
     }
 
     companion object {
-        /** Model files are expected under assets/kws/<name>/. */
-        private val requiredFiles = listOf(
-            "encoder.onnx",
-            "decoder.onnx",
-            "joiner.onnx",
-            "tokens.txt",
-            "keywords.txt",
-        )
-
         fun modelsPresent(context: Context, modelDir: String = "kws"): Boolean = runCatching {
             val files = context.assets.list(modelDir).orEmpty().toSet()
-            requiredFiles.all { it in files }
+            val hasEncoder = "encoder.int8.onnx" in files || "encoder.onnx" in files
+            val hasDecoder = "decoder.int8.onnx" in files || "decoder.onnx" in files
+            val hasJoiner = "joiner.int8.onnx" in files || "joiner.onnx" in files
+            val hasTokens = "tokens.txt" in files
+            val hasKeywords = "keywords.txt" in files
+            hasEncoder && hasDecoder && hasJoiner && hasTokens && hasKeywords
         }.getOrDefault(false)
 
         fun ensureExtracted(context: Context, modelDir: String = "kws"): File {
             val target = File(context.filesDir, "kws").also { it.mkdirs() }
-            requiredFiles.forEach { name ->
-                val out = File(target, name)
-                if (!out.exists()) {
+            val assetFiles = context.assets.list(modelDir).orEmpty().toSet()
+
+            val encoderSrc = if ("encoder.int8.onnx" in assetFiles) "encoder.int8.onnx" else "encoder.onnx"
+            val decoderSrc = if ("decoder.int8.onnx" in assetFiles) "decoder.int8.onnx" else "decoder.onnx"
+            val joinerSrc = if ("joiner.int8.onnx" in assetFiles) "joiner.int8.onnx" else "joiner.onnx"
+
+            val filesToExtract = listOf(
+                encoderSrc to "encoder.onnx",
+                decoderSrc to "decoder.onnx",
+                joinerSrc to "joiner.onnx",
+                "tokens.txt" to "tokens.txt",
+                "keywords.txt" to "keywords.txt",
+            )
+            filesToExtract.forEach { (src, dst) ->
+                val out = File(target, dst)
+                if (!out.exists() || out.length() == 0L || dst == "keywords.txt") {
                     runCatching {
-                        context.assets.open("$modelDir/$name").use { input ->
+                        context.assets.open("$modelDir/$src").use { input ->
                             out.outputStream().use { output -> input.copyTo(output) }
                         }
                     }
-                }
-            }
-            // Allow updating keywords.txt/lexicon config without forcing model re-extract of ONNXs
-            runCatching {
-                context.assets.open("$modelDir/keywords.txt").use { input ->
-                    File(target, "keywords.txt").outputStream().use { output -> input.copyTo(output) }
                 }
             }
             return target
@@ -90,7 +91,12 @@ class WakeWordEngine private constructor(
             return (fromAssets ?: fromFiles)?.ifBlank { null } ?: "Wake up AURA"
         }
 
-        suspend fun create(context: Context, sampleRate: Int = 16000): WakeWordEngine? = withContext(Dispatchers.IO) {
+        suspend fun create(
+            context: Context,
+            sampleRate: Int = 16000,
+            threshold: Float = 0.20f,
+            score: Float = 1.5f,
+        ): WakeWordEngine? = withContext(Dispatchers.IO) {
             if (!modelsPresent(context)) return@withContext null
             runCatching {
                 val dir = ensureExtracted(context)
@@ -108,8 +114,8 @@ class WakeWordEngine private constructor(
                         modelType = "zipformer2",
                     ),
                     keywordsFile = File(dir, "keywords.txt").absolutePath,
-                    keywordsScore = 1.5f,
-                    keywordsThreshold = 0.25f,
+                    keywordsScore = score,
+                    keywordsThreshold = threshold,
                     numTrailingBlanks = 1,
                     maxActivePaths = 4,
                 )

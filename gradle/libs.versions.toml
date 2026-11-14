@@ -1,4 +1,6 @@
 [versions]
+koog = "1.0.0"
+mcpKotlinSdk = "0.8.3"
 agp = "8.10.1"
 kotlin = "2.1.20"
 ksp = "2.1.20-1.0.32"
@@ -47,6 +49,10 @@ espresso = "3.7.0"
 uiautomator = "2.3.0"
 
 [libraries]
+koog-agents = { group = "ai.koog", name = "koog-agents", version.ref = "koog" }
+mcp-kotlin-sdk-server = { group = "io.modelcontextprotocol", name = "kotlin-sdk-server", version.ref = "mcpKotlinSdk" }
+mcp-kotlin-sdk-client = { group = "io.modelcontextprotocol", name = "kotlin-sdk-client", version.ref = "mcpKotlinSdk" }
+
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
 androidx-lifecycle-viewmodel = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx", version.ref = "lifecycle" }

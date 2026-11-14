@@ -21,6 +21,30 @@ import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
+/**
+ * The phone's signaling endpoint: a tiny HTTP/1.1 server on the local network that trades one
+ * WebRTC offer for one answer. MCP traffic itself never goes through it.
+ *
+ * Endpoints (JSON in and out, `Connection: close`):
+ * - `GET /aura/info` → [Handler.info]. Lets the PC recognise the phone during discovery.
+ * - `POST /aura/connect` {`pin`? | `tokenHash`?, `offer`: {`type`: "offer", `sdp`}} →
+ *   [Handler.connect]: 200 {`answer`: {`type`, `sdp`}} or an error {`error`, `code`,
+ *   `retryAfterSec`?}.
+ *
+ * - Contract: pure JVM (no Android APIs), so it is unit tested on the desktop JVM. Binds IPv4
+ *   only, on the first free port of [LanPolicy.PORTS]. At most [MAX_CONCURRENT] requests run at
+ *   once, and at most [MAX_PER_PEER] from one address; extra connections are closed unanswered.
+ *   A request must arrive in full within `requestDeadlineMs`, so a client trickling bytes can't
+ *   hold a worker.
+ * - Refuses, before any handler runs: peers that fail [acceptPeer] (not on the LAN, or arriving
+ *   over mobile data), any request with an `Origin` header, and a POST that isn't
+ *   `application/json`. Why the last two: a web page open on a computer in the same network can
+ *   send requests here. Browsers always add `Origin` to those, and can't send a JSON POST
+ *   cross-origin without a preflight this server never answers. The bridge sends neither.
+ * - Fails: a malformed request gets 400; an exception in a handler gets 500 and is logged.
+ *   Nothing is retried.
+ * - Change together: the request/response shapes with `aura-mcp-connect/src/lan.js`.
+ */
 class LanSignalingServer(
     private val handler: Handler,
     private val acceptPeer: (socket: Socket) -> Boolean = { LanPolicy.isLanPeer(it.inetAddress) },
@@ -32,6 +56,7 @@ class LanSignalingServer(
         fun connect(request: ConnectRequest): Response
     }
 
+    /** A parsed, shape-checked `POST /aura/connect`. Exactly one of [pin] and [tokenHash] is set. */
     data class ConnectRequest(
         val pin: String?,
         val tokenHash: String?,
@@ -60,8 +85,14 @@ class LanSignalingServer(
     ) { r -> Thread(r, "aura-lan-signaling").apply { isDaemon = true } }
     private val perPeer = ConcurrentHashMap<InetAddress, Int>()
 
+    /** The bound port, or 0 when stopped. */
     val port: Int get() = serverSocket?.localPort ?: 0
 
+    /**
+     * Binds and starts accepting. Returns the bound port.
+     *
+     * - Fails: throws [java.io.IOException] when every port in [ports] is taken.
+     */
     fun start(ports: IntRange = LanPolicy.PORTS): Int {
         check(serverSocket == null) { "already started" }
         var lastError: Exception? = null
@@ -83,6 +114,7 @@ class LanSignalingServer(
         return bound.localPort
     }
 
+    /** Stops accepting and closes the socket. Idempotent. In-flight requests finish on their own. */
     fun stop() {
         val s = serverSocket ?: return
         serverSocket = null
@@ -95,7 +127,7 @@ class LanSignalingServer(
             val socket = try {
                 s.accept()
             } catch (e: SocketException) {
-                break
+                break // closed by stop()
             } catch (e: Exception) {
                 log("accept failed: ${e.message}")
                 continue
@@ -131,7 +163,7 @@ class LanSignalingServer(
             val response = try {
                 route(readRequest(DeadlineInput(s, System.currentTimeMillis() + requestDeadlineMs)), s.inetAddress)
             } catch (e: SocketTimeoutException) {
-                return
+                return // too slow: close without an answer
             } catch (e: BadRequest) {
                 Response.error(400, "bad_request", e.message ?: "Bad request")
             } catch (e: Exception) {
@@ -157,18 +189,22 @@ class LanSignalingServer(
         }
     }
 
+    /** Reads from [socket], failing with [SocketTimeoutException] once [deadline] (epoch ms) passes. */
     private class DeadlineInput(private val socket: Socket, private val deadline: Long) : InputStream() {
         private val inner = socket.getInputStream()
+
         private fun arm() {
             val left = deadline - System.currentTimeMillis()
             if (left <= 0) throw SocketTimeoutException("request deadline passed")
             socket.soTimeout = left.toInt()
         }
+
         override fun read(): Int { arm(); return inner.read() }
         override fun read(b: ByteArray, off: Int, len: Int): Int { arm(); return inner.read(b, off, len) }
     }
 
     internal data class Request(val method: String, val path: String, val headers: Map<String, String>, val body: String)
+
     private class BadRequest(message: String) : Exception(message)
 
     companion object {

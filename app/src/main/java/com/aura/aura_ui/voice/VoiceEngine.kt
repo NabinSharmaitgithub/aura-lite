@@ -23,6 +23,13 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
+data class AuraVoiceInfo(
+    val name: String,
+    val locale: String,
+    val displayName: String,
+    val isNetworkRequired: Boolean = false,
+)
+
 /**
  * Single-owner voice pipeline: one recorder, one recognizer, one speaker.
  *
@@ -41,6 +48,9 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
 
     private val _transcript = MutableStateFlow("")
     val transcript: StateFlow<String> = _transcript.asStateFlow()
+
+    private val _rmsDb = MutableStateFlow(0f)
+    val rmsDb: StateFlow<Float> = _rmsDb.asStateFlow()
 
     private val _listening = MutableStateFlow(false)
     val listening: StateFlow<Boolean> = _listening.asStateFlow()
@@ -87,7 +97,9 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
                     speech.setRecognitionListener(object : RecognitionListener {
                         override fun onReadyForSpeech(params: Bundle?) = Unit
                         override fun onBeginningOfSpeech() = Unit
-                        override fun onRmsChanged(rmsdB: Float) = Unit
+                        override fun onRmsChanged(rmsdB: Float) {
+                            _rmsDb.value = rmsdB
+                        }
                         override fun onBufferReceived(buffer: ByteArray?) = Unit
                         override fun onEndOfSpeech() = Unit
                         override fun onError(error: Int) {
@@ -133,6 +145,7 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
     }
 
     fun cancelListening() {
+        _rmsDb.value = 0f
         runCatching { recognizer?.cancel() }
         runCatching { recognizer?.destroy() }
         recognizer = null
@@ -159,6 +172,25 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
         val engine = ensureTts() ?: return false
         applyPreferredVoice(engine)
         return true
+    }
+
+    fun getVoiceList(): List<AuraVoiceInfo> = runCatching {
+        val engine = ensureTts() ?: return@runCatching emptyList()
+        engine.voices?.map { voice ->
+            val localeStr = voice.locale.toLanguageTag()
+            val cleanName = voice.name.substringAfterLast('-').substringAfterLast('#')
+            val displayName = "${voice.locale.displayName} ($cleanName)"
+            AuraVoiceInfo(
+                name = voice.name,
+                locale = localeStr,
+                displayName = displayName,
+                isNetworkRequired = voice.isNetworkConnectionRequired,
+            )
+        }?.sortedBy { it.displayName }.orEmpty()
+    }.getOrDefault(emptyList())
+
+    fun previewVoice(sampleText: String = "Hello! I am Aura, your personal AI assistant.") {
+        speak(sampleText, flush = true)
     }
 
     fun voices(): List<String> = runCatching { ensureTts(); tts?.voices?.map { it.name }.orEmpty() }.getOrDefault(emptyList())
@@ -193,7 +225,14 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
     }
 
     private fun applyPreferredVoice(engine: TextToSpeech) {
-        val pref = preferredTtsSetting()
+        val prefs = context.getSharedPreferences("aura_settings", Context.MODE_PRIVATE)
+        val pref = prefs.getString("tts_voice", "").orEmpty().trim()
+        val pitch = prefs.getFloat("tts_pitch", 1.0f).coerceIn(0.5f, 2.0f)
+        val rate = prefs.getFloat("tts_rate", 1.0f).coerceIn(0.5f, 2.0f)
+
+        runCatching { engine.setPitch(pitch) }
+        runCatching { engine.setSpeechRate(rate) }
+
         if (pref.isBlank()) {
             runCatching { engine.language = Locale.getDefault() }
             return
@@ -202,7 +241,7 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
         if (voiceName != null) {
             runCatching {
                 val voice = engine.voices?.firstOrNull { it.name == voiceName || it.name.equals(voiceName, true) }
-                if (voice != null) engine.voice = voice
+                if (voice != null) engine.voice = voice else engine.language = Locale.getDefault()
             }
         } else {
             runCatching { engine.language = Locale.getDefault() }

@@ -7,43 +7,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-enum class AuthScheme { BEARER, X_GOOG_API_KEY, ANTHROPIC_X_API_KEY, NONE }
-
-enum class ModelListStyle { OPENAI_DATA, GEMINI_MODELS }
-
-enum class VisionInference { NEVER, ALWAYS, BY_MODEL_ID, BY_PROVIDER }
-
-enum class ReasoningInference { NONE, BY_MODEL_ID, BY_PROVIDER }
-
-data class ProviderProfile(
-    val reasoningParam: String? = null,
-    val visionContentShape: String = "openai",
-    val mergeSystemIntoFirstUser: Boolean = false,
-    val toolChoiceAuto: Boolean = true,
-    val repairToolArguments: Boolean = true,
-    val extraHeaders: Map<String, String> = emptyMap(),
-)
-
-data class LlmEndpoint(
-    val id: String,
-    val displayName: String,
-    val baseUrl: String,
-    val chatCompletionsPath: String,
-    val modelsUrl: String,
-    val authScheme: AuthScheme,
-    val modelListStyle: ModelListStyle,
-    val visionInference: VisionInference,
-    val reasoningInference: ReasoningInference,
-    val profile: ProviderProfile,
-    val isBuiltIn: Boolean,
-    val keyHint: String,
-    val keyUrl: String?,
-    val defaultModelId: String?,
-) {
-    val chatUrl: String get() = baseUrl.trimEnd('/') + chatCompletionsPath
-    val modelsEndpoint: String get() = baseUrl.trimEnd('/') + modelsUrl
-}
-
 data class ModelInfo(
     val id: String,
     val displayName: String,

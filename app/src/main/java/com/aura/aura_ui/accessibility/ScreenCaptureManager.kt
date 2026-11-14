@@ -13,6 +13,8 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.util.Base64
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.aura.aura_ui.state.CaptureState
 import java.io.File
@@ -28,7 +30,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.resume
 
 /**
- * Single-frame MediaProjection capture.
+ * Single-frame MediaProjection capture with automatic fallback to AccessibilityScreenshot.
  *
  * Memory contract: at most one full-resolution frame exists, the virtual display is torn down
  * immediately after each capture, and the returned bitmap is downscaled and recycled by callers.
@@ -65,26 +67,49 @@ class ScreenCaptureManager @Inject constructor(@ApplicationContext private val c
             return
         }
         release()
-        projection = projectionManager.getMediaProjection(resultCode, data)
-        projectionCallback = object : MediaProjection.Callback() {
-            override fun onStop() {
-                projection = null
-                _state.value = CaptureState.NoConsent
+        runCatching {
+            projection = projectionManager.getMediaProjection(resultCode, data)
+            projectionCallback = object : MediaProjection.Callback() {
+                override fun onStop() {
+                    projection = null
+                    _state.value = CaptureState.NoConsent
+                }
             }
+            if (Build.VERSION.SDK_INT >= 34) {
+                projectionCallback?.let { projection?.registerCallback(it, Handler(context.mainLooper)) }
+            }
+            _state.value = CaptureState.Granted
+        }.onFailure { e ->
+            Log.e("ScreenCaptureManager", "Failed to obtain MediaProjection: ${e.message}", e)
+            // If MediaProjection fails, mark granted if Accessibility service is running as fallback
+            _state.value = if (AuraAccessibilityService.isConnected()) CaptureState.Granted else CaptureState.NoConsent
         }
-        if (Build.VERSION.SDK_INT >= 34) {
-            projectionCallback?.let { projection?.registerCallback(it, Handler(context.mainLooper)) }
-        }
-        _state.value = CaptureState.Granted
         _consentRequested.value = 0
     }
 
-    fun hasConsent(): Boolean = _state.value.hasConsent
+    fun hasConsent(): Boolean = _state.value.hasConsent || AuraAccessibilityService.isConnected()
 
     suspend fun captureToFile(maxDimension: Int = 1080): Result<File> = mutex.withLock {
-        val active = projection ?: return Result.failure(
-            IllegalStateException("Screen capture permission has not been granted"),
-        )
+        val active = projection
+        if (active == null) {
+            // Fallback to accessibility screenshot source
+            val service = AuraAccessibilityService.instance
+            if (service != null) {
+                return when (val shot = service.captureScreenshot()) {
+                    is AccessibilityShot.Ok -> {
+                        val bytes = Base64.decode(shot.base64Jpeg, Base64.DEFAULT)
+                        val out = File(context.filesDir, "screen/current.png").also { it.parentFile?.mkdirs() }
+                        out.writeBytes(bytes)
+                        Result.success(out)
+                    }
+                    is AccessibilityShot.Failed -> Result.failure(IllegalStateException(shot.message))
+                }
+            }
+            return Result.failure(
+                IllegalStateException("Screen capture permission has not been granted and accessibility service is inactive"),
+            )
+        }
+
         _state.value = CaptureState.Capturing
         val metrics = context.resources.displayMetrics
         val width = metrics.widthPixels

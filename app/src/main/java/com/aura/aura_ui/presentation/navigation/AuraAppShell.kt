@@ -67,6 +67,7 @@ import com.aura.aura_ui.presentation.screens.TermsScreen
 import com.aura.aura_ui.presentation.screens.ToolsScreen
 import com.aura.aura_ui.presentation.screens.TrustedDevicesScreen
 import com.aura.aura_ui.presentation.screens.VoiceSettingsScreen
+import com.aura.aura_ui.presentation.screens.WakeWordScreen
 import com.aura.aura_ui.ui.theme.LocalMonoScheme
 import com.aura.aura_ui.ui.theme.MonoStyleSmall
 
@@ -173,7 +174,10 @@ fun AuraAppShell(
                 CompanionScreen(vm)
             }
             composable(Routes.AGENT_VOICE) {
-                VoiceSettingsScreen(vm)
+                VoiceSettingsScreen(vm, onNavigateToWakeWord = { navigate(Routes.AGENT_WAKE_WORD) })
+            }
+            composable(Routes.AGENT_WAKE_WORD) {
+                WakeWordScreen(vm, onNavigateBack = { navController.popBackStack() })
             }
 
             composable(Routes.SETTINGS_B2) {

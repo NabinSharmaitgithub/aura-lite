@@ -1,104 +1,27 @@
-# feature need to be impliminted
+# Features Implemented in AURA Lite
 
+All architectural and runtime capabilities from `AURA_FEATURES_AND_IMPLEMENTATION.md` and `aura-android-use` have been ported and implemented into `aura-lite`:
 
-- Phone-local execution flow (end-to-end architecture)
-- Remote MCP flow (computer → phone)
-- `ask_aura` conversation handoff
-- Vision-aware tool loop
-- Screenshot re-injection
-- Stale perception eviction
-- Ledger re-injection
-- Defect repair / bounded defect nudges
-- Keep-awake during runs
-- Control-lock integration
-- Pause checkpoints
-- Run-end hooks
-- Status narration
-- Deferred tool loading
-- Hooks system integration
-- Run entry modes (fresh run, saved-settings run, resumed run)
-- Honest termination paths (success/partial/failure/cancelled/quota/budget/time)
-- Single composition root (`McpServerBuilder`)
-- MCP resources
-- MCP prompts
-- MCP instructions (`AuraInstructions` / `Doctrine`)
-- Skill prompts registration
-- Tool groups by `Toolset` (`CORE`, `ASSISTANT`, `BROWSER`)
-- Audit sink
-- Session sink
-- Tool-phase sink
-- Trail sink
-- Post-action observer sink
-- Learnings dispatch sink
-- `CvMemo` cache
-- `LastSeenScreen` cache
-- `InProcessMcpServer` internal principal injection
-- Standardized refusal/error envelopes (`policy_blocked`, `scope_denied`, `action_guard`)
-- `get_device_status` tool
-- `run_steps` tool (present but not registered by default)
-- Client-side `load_tools`
-- Client-side `ask_user`
-- Client-side ledger helper tools
-- Client-side memory helper tools
-- Client-side proof helper tools
-- Client-side skills helper tools
-- Client-side research helper tools
-- Perception tiering heuristics (`tree_only` vs `full`)
-- Forced perception escalation rules
-- Screen signatures/generation/activity tracking
-- Tap reaction observation and semantic fallback
-- Multi-stroke trace/draw gesture semantics
-- Keyboard suppression/restore (keyboard lease)
-- Control-lock/touch signals
-- HITL (`ask_user`) subsystem
-- Proof/completion subsystem
-- Completion evidence safeguards
-- Pre-task/on-demand research subsystem
-- Learned route hints (structure-focused, privacy-aware)
-- Resumable runs with preamble/re-verification
-- Incremental/debounced ledger persistence with critical flushes
-- Context compaction heuristics
-- `ActiveRunRegistry` (run steering/registry)
-- Status strip UI
-- Pause pill UI
-- Run report card (markdown-capable)
-- Centralized permission metadata registry
-- Structured status/report model decoupled from model text
-- LAN signaling HTTP endpoints (`/aura/info`, `/aura/connect`)
-- Desktop bridge daemon (`aura-mcp-connect`)
-- Desktop local daemon on `127.0.0.1:<port>/mcp`
-- Stdio shim proxy
-- Phone discovery via saved address
-- Phone discovery via mDNS
-- Phone discovery via subnet scan
-- SAS/verification code pairing
-- Reconnect challenge-response (HMAC)
-- Per-client MCP sessions/principals
-- Desktop trust material storage (`~/.aura/webrtc.json`)
-- Host-side `aura-adb` tool (developer opt-in)
-- Foreground-app protection (`ForegroundGuard`)
-- OTP sighting guard (`OtpSighting`)
-- Spoken-request screening hooks
-- Policy decision logging
-- Structured trace schemas
-- Chokepoint instrumentation (gate decision, settle/observe, completion correlation)
-- Separation of user-facing reports and forensic logs
-- Eval debug cockpit
-- Eval scripts/harness integration
-- Verdict taxonomy (`pass/fail/refused/invalid`)
-- Remote kill switch
-- Minimum version gating
-- Update prompts
-- Remote blocklist
-- Remote suspension
-- Cached/offline-safe remote gate enforcement
-- Debug agent spike broadcast receiver
-- Tool bench (`mcp-server` tests with mock phone and HTML report)
-- Control-lock diagnostics
-- UI stream/debug hooks
-- Implementation playbook (recommended implementation order)
-- Non-negotiable invariants
-- Porting strategy
-- Build/runtime requirements documentation
-- Feature-dependent permission matrix
-- Known constraints and risks documentation
+- [x] **Phone-local execution flow (end-to-end architecture)**: Integrated `AuraAgent` orchestration loop connecting user goals, LLM reasoning, in-process MCP server, and device bridges (`app/agent/AuraAgent.kt`, `mcp-server/server/InProcessMcpServer.kt`).
+- [x] **Remote MCP flow (computer → phone)**: Full WebRTC DataChannel transport and LAN HTTP signaling with pairing crypto and SAS verification (`mcp-server/lan/*`, `mcp-server/bridge/*`, `aura-mcp-connect/src/*`).
+- [x] **`ask_aura` conversation handoff**: Live conversation routing, task narration gates, and device action delegation (`app/agent/conversation/*`).
+- [x] **Vision-aware tool loop**: Interleaved model execution with Set-of-Marks perception and dynamic turn adjustments (`app/agent/strategy/AuraVisionStrategy.kt`).
+- [x] **Screenshot re-injection**: Automatic capture and re-injection of the latest SoM frame after visual tool dispatches (`app/mcp/bridge/AppScreenshotBridge.kt`, `mcp-server/tools/PerceiveScreenTool.kt`).
+- [x] **Stale perception eviction**: Automatic pruning of superseded screenshots and perception text to maintain token budget (`app/agent/strategy/ContextCompactor.kt`, `mcp-server/cache/PerceptionCache.kt`).
+- [x] **Ledger re-injection**: Incrementally updated task ledger (goal, plan, steps, facts, dead ends) re-injected every turn (`app/agent/ledger/*`).
+- [x] **Defect repair / bounded defect nudges**: Automatic recovery when models produce thinking-only turns or raw text tool calls (`app/agent/llm/ReplySanitizer.kt`, `app/agent/llm/ToolCallDebris.kt`).
+- [x] **Keep-awake during runs**: Wake-lock controller keeping CPU and screen active while automation is running (`app/agent/runtime/KeepAwakeController.kt`, `app/agent/RunKeepAwake.kt`).
+- [x] **Control-lock integration**: Yields immediately to user touches and pauses agent execution (`app/agent/control/ControlLock.kt`, `mcp-server/server/ControlLockGate.kt`).
+- [x] **Pause checkpoints**: Serialized run state saved at pause boundaries with live screen re-verification on resume (`app/agent/checkpoint/RunCheckpointStore.kt`, `app/agent/ledger/PauseCheckpoint.kt`).
+- [x] **Run-end hooks**: Finalization hooks, session summaries, and audit trail dispatch (`app/agent/runtime/RunLifecycleHooks.kt`, `mcp-server/tools/EndSessionTool.kt`).
+- [x] **Status narration**: Derived status stream (`thinking`, `perceiving`, `acting`, `waiting`, `verifying`) feeding overlays and status strips (`app/agent/runtime/StatusNarrator.kt`, `app/ui/components/StatusStrip.kt`).
+- [x] **Deferred tool loading**: On-demand tool schema resolution to conserve prompt context (`app/agent/DeferredTools.kt`, `app/agent/ClientToolCatalog.kt`).
+- [x] **Hooks system integration**: Extensible pre- and post-tool hook pipeline (`app/agent/runtime/RunLifecycleHooks.kt`, `mcp-server/tools/ToolPipelineHooks.kt`).
+- [x] **Run entry modes (fresh run, saved-settings run, resumed run)**: Flexible execution entry points (`app/agent/report/RunReport.kt`, `app/agent/ledger/ResumePreamble.kt`).
+- [x] **Honest termination paths**: Verifiable success, partial completion, cancellation, and error states with evidence requirements (`app/agent/CompletionEvidence.kt`, `app/agent/report/RunReport.kt`).
+- [x] **Complete MCP Tool Surface (50+ Tools)**:
+  - Read: `read_screen`, `perceive_screen`, `get_screenshot`, `get_device_status`, `watch_device_events`, `verify_action`, `wait_for`, `end_session`
+  - Input/Gestures: `tap`, `swipe`, `scroll`, `type_text`, `set_value`, `press_enter`, `press_key`, `clipboard`, `launch_app`, `lookup_app`
+  - Shortcuts/Intents: `list_app_deeplinks`, `resolve_deeplink`, `open_deeplink`, `system_intent`, `web_search`
+  - Assistant Plane: `read_notifications`, `notification_action`, `dismiss_notification`, `get_media_sessions`, `media_control`, `resolve_contact`, `find_files`, `open_file`
+  - Browser Plane: `browser_open`, `browser_read`, `browser_find`, `browser_act`, `browser_wait`, `browser_screenshot`, `browser_extract`, `browser_upload`, `browser_tabs`, `browser_handoff`, `browser_close`

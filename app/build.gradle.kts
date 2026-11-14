@@ -287,6 +287,7 @@ dependencies {
     implementation(libs.ktor.serialization.json)
 
     implementation(libs.mcp.kotlin.client)
+    implementation(libs.koog.agents)
 
     implementation(libs.onnxruntime)
     implementation(libs.mlkit.text.recognition)
