@@ -72,6 +72,8 @@ object McpToolCatalog {
         "media_control" to "Play, pause or skip media",
         "system_intent" to "Alarms, timers, calls, SMS, calendar, share, navigation",
         "open_file" to "Open a file in its app",
+        "lock_device" to "Lock the device",
+        "unlock_device" to "Unlock the device",
     )
 
     /**

@@ -111,7 +111,7 @@ object CapabilityNarrative {
         ),
         Family(
             id = "system",
-            tools = setOf("system_intent", "get_device_status"),
+            tools = setOf("system_intent", "get_device_status", "lock_device", "unlock_device"),
             sentence = "set alarms and timers, add calendar events, start a call or a text " +
                 "message, share things, and begin navigation",
         ),

@@ -289,6 +289,7 @@ class ActionGuard {
             "press_key", "press_enter",
             "wait_for", "request_screen_capture_permission",
             "system_intent", "notification_action",
+            "lock_device", "unlock_device",
         )
 
         /**

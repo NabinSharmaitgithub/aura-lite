@@ -48,6 +48,7 @@ internal object ForegroundGuard {
         "launch_app", "open_deeplink",
         "volume", "media_control",
         "notification_action", "dismiss_notification", "system_intent", "open_file",
+        "lock_device", "unlock_device",
         // Browser — act on a browser surface, never inside the foreground app.
         // TRUE ONLY WHILE `session:"mine"` IS UNIMPLEMENTED. Slice 1 ships the
         // scratch engine only (AppBrowserBridge reports MINE unavailable), so no
