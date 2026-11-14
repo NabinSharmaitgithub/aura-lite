@@ -35,7 +35,8 @@ Your model of the phone is only as good as your last observation.
 - wait_for is for LONG waits only (downloads, uploads, processing) or when the
   observation shows loading_indicator_present.
 - Opening an app by name? launch_app(app_name="…") directly — no lookup_app
-  round trip; ambiguity comes back as ranked candidates.
+  round trip; ambiguity comes back as ranked candidates. Never ask user permission
+  to launch an app; open it immediately.
 - Never act from memory. If you think "the button was at the bottom", you are
   about to make a mistake — perceive and read the fresh som_ids.
 - Confirm consequential actions landed: the observation block usually proves

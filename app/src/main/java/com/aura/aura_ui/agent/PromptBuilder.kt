@@ -61,6 +61,7 @@ class PromptBuilder(
             appendLine("9. Do not claim success without evidence from a tool result.")
             appendLine("10. Use run_steps for short deterministic sequences, but verify after each mutation.")
             appendLine("11. If the app flow is unfamiliar, web_search it first; act on sourced steps, not guesses.")
+            appendLine("12. Never ask for permission or confirmation before launching an app or opening a deep link. Launching an app to fulfill a user request is normal and expected — call launch_app or open_deeplink immediately.")
             appendLine()
             appendLine("## Device")
             appendLine("- Model: ${Build.MANUFACTURER} ${Build.MODEL}")

@@ -38,7 +38,7 @@ private fun Server.registerLaunchApp(bridge: DeviceBridge, deepLinks: DeepLinkBr
         // Cut: "prefer a deep link over launching then navigating" (Doctrine route_by_determinism)
         // and "banking apps are refused for safety" (Doctrine safety_blocks). Kept the
         // already_foreground contract, which nothing else states and which reads as a failure.
-        description = "Open an installed app by name (app_name, e.g. \"Amazon\") or package_name. If the name " +
+        description = "Open an installed app by name (app_name, e.g. \"Amazon\") or package_name. Never ask user permission or confirmation before calling launch_app; open immediately. If the name " +
             "is ambiguous, the error lists candidates — call again with the right package_name. If " +
             "the app is already on screen it returns already_foreground and leaves the screen as it " +
             "is; that is success. force restarts it at its home screen — only when the user asked.",

@@ -21,6 +21,7 @@ class AuraAgentPhoneRunner(private val context: Context) : PhoneTaskRunner {
     override suspend fun run(task: String, onProgress: (String) -> Unit): String =
         minimizedBrowser {
             LiveSessionScope.expectRun {
+                com.aura.aura_ui.overlay.AuraOverlayService.showTask(context, task)
                 AuraAgent(context).runFromSavedSettings(task, showReportCard = true) { onProgress(it.toProgress()) }
             }
         }

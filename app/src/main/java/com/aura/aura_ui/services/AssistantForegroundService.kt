@@ -60,6 +60,7 @@ class AssistantForegroundService : Service() {
                 val entryMode = intent?.getStringExtra(EXTRA_ENTRY_MODE)
                     ?.let { runCatching { RunEntryMode.valueOf(it) }.getOrNull() }
                     ?: RunEntryMode.FRESH
+                com.aura.aura_ui.overlay.AuraOverlayService.showTask(this, goal)
                 runtime.submit(goal, entryMode = entryMode)
             }
         }
@@ -81,10 +82,20 @@ class AssistantForegroundService : Service() {
         }
         if (listenJob?.isActive == true) return
         listenJob = scope.launch {
-            val result = voice.listen()
+            val result = voice.listen(force = true)
             result.onSuccess { transcript ->
-                if (transcript.isNotBlank()) runtime.submit(transcript, voice = true)
-                else stopIfIdle()
+                if (transcript.isNotBlank()) {
+                    if (com.aura.aura_ui.agent.hitl.AskUserBroker.shared.pending.value != null) {
+                        val pending = com.aura.aura_ui.agent.hitl.AskUserBroker.shared.pending.value!!
+                        com.aura.aura_ui.agent.hitl.AskUserBroker.shared.answer(pending.id, transcript)
+                    } else if (runtime.isRunning) {
+                        runtime.steer(transcript)
+                    } else {
+                        runtime.submit(transcript, voice = true)
+                    }
+                } else {
+                    stopIfIdle()
+                }
             }.onFailure { error ->
                 notify(
                     AuraNotifications.DPI_FAILURE,

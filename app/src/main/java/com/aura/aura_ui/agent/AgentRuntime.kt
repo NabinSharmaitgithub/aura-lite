@@ -114,6 +114,26 @@ class AgentRuntime @Inject constructor(
     @Volatile private var paused = false
     @Volatile private var cancelRequested = false
     private val recentFailures = ArrayDeque<String>()
+    private val pendingDirectives = java.util.concurrent.ConcurrentLinkedQueue<String>()
+
+    fun steer(instruction: String) {
+        val trimmed = instruction.trim()
+        if (trimmed.isBlank()) return
+        android.util.Log.i("AgentRuntime", "Steering agent mid-run: $trimmed")
+        if (trimmed.equals("stop", ignoreCase = true) ||
+            trimmed.equals("cancel", ignoreCase = true) ||
+            trimmed.equals("abort", ignoreCase = true)) {
+            stop()
+            return
+        }
+        pendingDirectives.add(trimmed)
+        scope.launch {
+            runCatching { activeLedger?.setDirective(trimmed) }
+            runCatching { com.aura.aura_ui.agent.ledger.ActiveRunRegistry.shared.current?.setDirective(trimmed) }
+        }
+        StatusNarrator.update(com.aura.aura_ui.state.NarrationState.PLANNING, "Instruction: $trimmed")
+        com.aura.aura_ui.services.AgentStatusRegistry.setStatus("Instruction: $trimmed")
+    }
     private val clientSideTools = setOf(
         "ledger_add_fact",
         "ledger_note_dead_end",
@@ -129,8 +149,11 @@ class AgentRuntime @Inject constructor(
     val isRunning: Boolean get() = job?.isActive == true
 
     fun submit(goal: String, voice: Boolean = false, entryMode: RunEntryMode = RunEntryMode.FRESH) {
-        if (isRunning) return
         if (goal.isBlank()) return
+        if (isRunning) {
+            steer(goal)
+            return
+        }
         cancelRequested = false
         paused = false
         routeHintUsed = null
@@ -139,6 +162,10 @@ class AgentRuntime @Inject constructor(
         ActiveRunRegistry.start(runId, goal)
         ControlLock.setUserPaused(false)
         StatusNarrator.update(NarrationState.STARTING, goal.take(80))
+        com.aura.aura_ui.services.AgentStatusRegistry.setStatus(goal.take(80))
+        runCatching {
+            com.aura.aura_ui.overlay.AuraOverlayService.showTask(appContext, goal)
+        }
         job = scope.launch {
             try {
                 runSession(goal.trim(), voice, entryMode)
@@ -156,6 +183,7 @@ class AgentRuntime @Inject constructor(
         currentRunId?.let { ActiveRunRegistry.finish(it) }
         currentRunId = null
         activeLedger = null
+        pendingDirectives.clear()
         StatusNarrator.update(NarrationState.IDLE, null)
     }
 
@@ -360,6 +388,13 @@ class AgentRuntime @Inject constructor(
         try {
             val maxSteps = settings.maxSteps
             while (!cancelRequested && steps < maxSteps) {
+                while (pendingDirectives.isNotEmpty()) {
+                    val directive = pendingDirectives.poll() ?: break
+                    messages += LlmMessage.user("User mid-task instruction: \"$directive\". Follow this instruction now and adjust your plan accordingly.")
+                    addTrace(TraceType.USER_INTERRUPT, "User instruction: $directive")
+                    StatusNarrator.update(NarrationState.PLANNING, "Instruction: $directive")
+                    com.aura.aura_ui.services.AgentStatusRegistry.setStatus("Instruction: $directive")
+                }
                 val stopKind = budget.stopKind(steps)
                 if (stopKind != null) {
                     outcome = when (stopKind) {
@@ -528,7 +563,23 @@ class AgentRuntime @Inject constructor(
 
                     steps++
                     _state.value = _state.value.copy(phase = phaseAfter(RunEvent.Act(call.name)), stepCount = steps)
-                    StatusNarrator.update(NarrationState.ACTING, call.name)
+                    val verb = com.aura.aura_ui.agent.ToolVerbs.verbFor(call.name)
+                    val toolCaption = when (call.name) {
+                        "launch_app" -> {
+                            val targetApp = call.arguments["app_name"]?.toString()?.trim('"')
+                                ?: call.arguments["package"]?.toString()?.trim('"') ?: "app"
+                            "Opening $targetApp"
+                        }
+                        "tap" -> "Tapping on screen"
+                        "type_text" -> "Typing text"
+                        "web_search" -> "Searching online"
+                        "read_screen" -> "Reading screen"
+                        "scroll" -> "Scrolling"
+                        "end_session" -> "Finishing task"
+                        else -> "$verb ${call.name.replace('_', ' ')}"
+                    }
+                    StatusNarrator.update(NarrationState.ACTING, toolCaption)
+                    com.aura.aura_ui.services.AgentStatusRegistry.setStatus(toolCaption)
                     currentRunId?.let { ActiveRunRegistry.update(it, status = "acting") }
                     val callId = call.id.ifBlank { "c$steps" }
                     session.toolCall(callId, call.name, call.arguments)

@@ -72,9 +72,15 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
 
     val isAvailable: Boolean get() = SpeechRecognizer.isRecognitionAvailable(context)
 
-    suspend fun listen(timeoutMs: Long = 15000): Result<String> {
+    suspend fun listen(timeoutMs: Long = 15000, force: Boolean = false): Result<String> {
+        if (force) {
+            cancelListening()
+        }
         if (!owner.compareAndSet(false, true)) {
-            return Result.failure(IllegalStateException("Voice capture is already in use"))
+            cancelListening()
+            if (!owner.compareAndSet(false, true)) {
+                return Result.failure(IllegalStateException("Voice capture is already in use"))
+            }
         }
         _transcript.value = ""
         setSession(VoiceSessionState.LISTENING)
@@ -146,11 +152,21 @@ class VoiceEngine @Inject constructor(@ApplicationContext private val context: C
 
     fun cancelListening() {
         _rmsDb.value = 0f
-        runCatching { recognizer?.cancel() }
-        runCatching { recognizer?.destroy() }
-        recognizer = null
         setSession(VoiceSessionState.IDLE)
         owner.set(false)
+        val rec = recognizer
+        recognizer = null
+        if (rec != null) {
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                runCatching { rec.cancel() }
+                runCatching { rec.destroy() }
+            } else {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    runCatching { rec.cancel() }
+                    runCatching { rec.destroy() }
+                }
+            }
+        }
     }
 
     fun speak(text: String, flush: Boolean = true) {

@@ -230,7 +230,7 @@ object ToolCatalog {
     val apps: List<ToolDefinition> = listOf(
         ToolDefinition(
             "launch_app",
-            "Launch an installed app by name or package.",
+            "Launch an installed app by name or package. Never ask user permission before launching; open immediately.",
             schema(props = mapOf("app_name" to str("Human app name."), "package" to str("Android package name."))),
             ToolDomain.APPS, mutating = true,
         ),

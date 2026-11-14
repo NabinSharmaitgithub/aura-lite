@@ -4,13 +4,20 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import androidx.core.app.ServiceCompat
+import com.aura.aura_ui.agent.AgentRuntime
+import com.aura.aura_ui.agent.hitl.AskUserBroker
+import com.aura.aura_ui.agent.ledger.PlanStepStatus
+import com.aura.aura_ui.agent.runtime.StatusNarrator
 import com.aura.aura_ui.notifications.AuraNotifications
+import com.aura.aura_ui.services.AgentStatusRegistry
 import com.aura.aura_ui.services.AssistantForegroundService
 import com.aura.aura_ui.state.PillState
 import com.aura.aura_ui.voice.VoiceEngine
@@ -20,31 +27,43 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
  * Floating assistant surface — Ported directly from Figma project "aura-wake-screen" (node 0:1).
  *
- * Triggered when:
- * 1. User says "Hey AURA" / "Wake up AURA" (via WakeWordListeningService)
- * 2. User presses power button for 5 sec or home long-press (via AssistActivity / ACTION_ASSIST)
- * 3. User taps the Assistant shortcut chip in the app UI
+ * Displays over any other application on the phone (TYPE_APPLICATION_OVERLAY) while the agent
+ * is actively executing tasks.
  *
  * Displays:
- * - Rectangle 3 (Top Card): Frosted light grey card with JetBrains Mono ExtraBold live transcript
- * - Rectangle 1 (Bottom Pill): Black capsule pill with 16 animated white bars (Union) oscillating to speech
+ * - Rectangle 3 (Top Card): Frosted light grey card with JetBrains Mono ExtraBold typography
+ *   alternating smoothly between:
+ *   1. User Command: Initial instruction/goal requested by user
+ *   2. Live Caption: Current action / tool / thought being executed
+ *   3. To-do List: Plan steps checklist with [✓], [•], [ ] markers
+ * - Rectangle 1 (Bottom Pill): Black capsule pill hosting 16 animated white bars oscillating
+ *   dynamically to audio amplitude.
+ *
+ * Interactive:
+ * - Tapping the bottom black pill opens the mic for barge-in / mid-task user instruction even
+ *   while the agent is actively executing a task.
  */
 @AndroidEntryPoint
 class AuraOverlayService : Service() {
 
     @Inject lateinit var voice: VoiceEngine
+    @Inject lateinit var runtime: AgentRuntime
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var windowManager: WindowManager? = null
     private var view: OverlayPillView? = null
+    private var currentGoal: String = ""
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         AuraNotifications.ensureChannels(this)
         startForeground(AuraNotifications.ID_RUN, AuraNotifications.wakeWordNotification(this))
     }
@@ -61,6 +80,14 @@ class AuraOverlayService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
+            ACTION_SHOW_TASK -> {
+                val goal = intent.getStringExtra(EXTRA_TASK_GOAL).orEmpty()
+                if (goal.isNotBlank()) {
+                    currentGoal = goal
+                }
+                showFigmaOverlay()
+                view?.setTaskData(currentGoal, isRunning = true)
+            }
             ACTION_SHOW_AND_LISTEN -> {
                 showFigmaOverlay()
                 AssistantForegroundService.listen(this)
@@ -70,7 +97,7 @@ class AuraOverlayService : Service() {
             }
         }
 
-        observeVoice()
+        observeAll()
         return START_STICKY
     }
 
@@ -86,11 +113,20 @@ class AuraOverlayService : Service() {
                 voice.cancelListening()
                 pill.update(pillState(), "Tap to talk", "")
             } else {
+                // Allows user to give instruction / barge in even during task execution
                 AssistantForegroundService.listen(this)
             }
         }
         pill.onLongPressPill = { stopSelf() }
-        pill.onDismiss = { stopSelf() }
+        pill.onDismiss = {
+            if (!runtime.isRunning) {
+                stopSelf()
+            }
+        }
+
+        if (currentGoal.isNotBlank()) {
+            pill.setTaskData(currentGoal, runtime.isRunning)
+        }
 
         val density = resources.displayMetrics.density
         val params = WindowManager.LayoutParams(
@@ -116,7 +152,12 @@ class AuraOverlayService : Service() {
         else -> PillState.IDLE
     }
 
-    private fun observeVoice() {
+    private var observed = false
+    private fun observeAll() {
+        if (observed) return
+        observed = true
+
+        // 1. Observe voice transcripts (live StT)
         scope.launch {
             voice.transcript.collect { transcript ->
                 view?.update(
@@ -124,34 +165,39 @@ class AuraOverlayService : Service() {
                     status = when (pillState()) {
                         PillState.LISTENING -> "Listening…"
                         PillState.SPEAKING -> "Speaking…"
-                        PillState.IDLE -> "Tap to talk"
+                        PillState.IDLE -> if (runtime.isRunning) "Working…" else "Tap to talk"
                     },
                     transcript = transcript,
                     amplitude = if (voice.listening.value) 0.5f else 0.1f,
                 )
             }
         }
+
+        // 2. Observe voice listening state
         scope.launch {
             voice.listening.collect { listening ->
                 view?.update(
                     state = pillState(),
-                    status = if (listening) "Listening…" else "Tap to talk",
+                    status = if (listening) "Listening…" else if (runtime.isRunning) "Working…" else "Tap to talk",
                     transcript = voice.transcript.value,
                     amplitude = if (listening) 0.6f else 0f,
                 )
             }
         }
+
+        // 3. Observe voice speaking state
         scope.launch {
             voice.speaking.collect { speaking ->
                 view?.update(
                     state = pillState(),
-                    status = if (speaking) "Speaking…" else "Tap to talk",
+                    status = if (speaking) "Speaking…" else if (runtime.isRunning) "Working…" else "Tap to talk",
                     transcript = voice.transcript.value,
                     amplitude = if (speaking) 0.7f else 0f,
                 )
             }
         }
-        // Observe live RMS amplitude if available
+
+        // 4. Observe live RMS audio amplitude
         scope.launch {
             voice.rmsDb.collect { rms ->
                 if (voice.listening.value) {
@@ -165,9 +211,74 @@ class AuraOverlayService : Service() {
                 }
             }
         }
+
+        // 5. Observe StatusNarrator for live caption updates
+        scope.launch {
+            StatusNarrator.detail.collect { detail ->
+                if (!detail.isNullOrBlank()) {
+                    view?.updateLiveCaption(detail)
+                }
+            }
+        }
+
+        // 6. Observe AgentStatusRegistry for tool narration / beat
+        scope.launch {
+            AgentStatusRegistry.line.collect { line ->
+                if (line.isNotBlank()) {
+                    view?.updateLiveCaption(line)
+                }
+            }
+        }
+        scope.launch {
+            AgentStatusRegistry.beat.collect { beat ->
+                if (beat != null && beat.text.isNotBlank()) {
+                    view?.updateLiveCaption(beat.text)
+                }
+            }
+        }
+
+        // 7. Observe AgentRuntime state for task progress & todo-list
+        scope.launch {
+            runtime.state.collectLatest { state ->
+                val goal = state.goal.ifBlank { currentGoal }
+                if (state.running) {
+                    view?.setTaskData(goal, isRunning = true)
+                    if (state.planSteps.isNotEmpty()) {
+                        val formatted = state.planSteps.map { s ->
+                            val mark = when (s.typedStatus) {
+                                PlanStepStatus.DONE -> "[✓]"
+                                PlanStepStatus.IN_PROGRESS -> "[•]"
+                                PlanStepStatus.BLOCKED -> "[✗]"
+                                PlanStepStatus.SKIPPED -> "[-]"
+                                else -> "[ ]"
+                            }
+                            "$mark ${s.description}"
+                        }
+                        view?.updateTodoList(formatted)
+                    }
+                } else if (state.outcome != null) {
+                    val answer = state.answer ?: "Task finished"
+                    view?.setCompletion(answer)
+                    mainHandler.postDelayed({
+                        if (!runtime.isRunning) {
+                            stopSelf()
+                        }
+                    }, 4000)
+                }
+            }
+        }
+
+        // 8. Observe HITL AskUserBroker questions
+        scope.launch {
+            AskUserBroker.shared.pending.collect { q ->
+                view?.setPendingQuestion(q?.question)
+            }
+        }
     }
 
     override fun onDestroy() {
+        instance = null
+        observed = false
         scope.cancel()
         view?.let { runCatching { windowManager?.removeView(it) } }
         view = null
@@ -182,7 +293,14 @@ class AuraOverlayService : Service() {
 
         const val ACTION_SHOW = "com.aura.aura_ui.overlay.SHOW"
         const val ACTION_SHOW_AND_LISTEN = "com.aura.aura_ui.overlay.SHOW_AND_LISTEN"
+        const val ACTION_SHOW_TASK = "com.aura.aura_ui.overlay.SHOW_TASK"
         const val ACTION_HIDE = "com.aura.aura_ui.overlay.HIDE"
+        const val EXTRA_TASK_GOAL = "extra_task_goal"
+
+        @Volatile
+        private var instance: AuraOverlayService? = null
+
+        fun getInstance(): AuraOverlayService? = instance
 
         fun start(context: Context) {
             show(context)
@@ -193,6 +311,13 @@ class AuraOverlayService : Service() {
             context.startForegroundService(intent)
         }
 
+        fun showTask(context: Context, goal: String) {
+            val intent = Intent(context, AuraOverlayService::class.java)
+                .setAction(ACTION_SHOW_TASK)
+                .putExtra(EXTRA_TASK_GOAL, goal)
+            context.startForegroundService(intent)
+        }
+
         fun showAndListen(context: Context, source: String = "app") {
             val intent = Intent(context, AuraOverlayService::class.java).setAction(ACTION_SHOW_AND_LISTEN)
             context.startForegroundService(intent)
@@ -200,6 +325,30 @@ class AuraOverlayService : Service() {
 
         fun hide(context: Context) {
             context.stopService(Intent(context, AuraOverlayService::class.java))
+        }
+
+        fun hideIfRunning() {
+            instance?.stopSelf()
+        }
+
+        fun minimize(context: Context) {
+            // Keep overlay displayed over other apps during task execution
+        }
+
+        fun restore(context: Context) {
+            show(context)
+        }
+
+        fun updateLiveNotification(agent: String, output: String) {
+            instance?.view?.updateLiveCaption(output)
+        }
+
+        fun updateLiveNotificationProgress(agent: String, step: String) {
+            instance?.view?.updateLiveCaption(step)
+        }
+
+        fun endVoiceConversation() {
+            instance?.stopSelf()
         }
     }
 }
