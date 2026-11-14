@@ -116,7 +116,7 @@ object CompletionGate {
                 (outcome.why?.takeIf { it.isNotBlank() }?.let { " ${it.trim().replaceFirstChar(Char::uppercase)}." } ?: "")
         }
         val target = outcome.target
-        if (target != null && outcome.proven < target) {
+        if (target != null && outcome.proven?.let { it < target } == true) {
             return "Being straight with you: I only got part of this done — ${outcome.proven} of $target."
         }
         return if (trustJudge) verdictLine(outcome) else null

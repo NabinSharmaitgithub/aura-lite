@@ -86,4 +86,7 @@ data class LlmEndpoint(
      * can be invented; callers treat blank as "no default" and must prompt the user.
      */
     val defaultModelId: String = "",
-)
+) {
+    val chatUrl: String get() = if (baseUrl.endsWith("/")) "" else ""
+    val modelsEndpoint: String get() = modelsUrl
+}

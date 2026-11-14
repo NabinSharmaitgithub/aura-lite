@@ -26,7 +26,7 @@ enum class PlanStepStatus(val wire: String) {
 @Serializable
 data class PlanStep(
     val text: String = "",
-    val status: PlanStepStatus = PlanStepStatus.PENDING,
+    val status: String = "pending",
     val evidence: String? = null,
     val failReason: String? = null,
     val attempts: Int = 0,
@@ -34,8 +34,11 @@ data class PlanStep(
     val description: String = text,
     val note: String? = null,
 ) {
-    val settled: Boolean get() = status == PlanStepStatus.DONE || status == PlanStepStatus.FAILED || status == PlanStepStatus.SKIPPED
-    val typedStatus: PlanStepStatus get() = status
+    val settled: Boolean get() = typedStatus == PlanStepStatus.DONE || typedStatus == PlanStepStatus.FAILED || typedStatus == PlanStepStatus.SKIPPED
+    val typedStatus: PlanStepStatus get() = PlanStepStatus.fromWire(status)
+
+    constructor(id: String, description: String, status: PlanStepStatus, note: String? = null) :
+        this(text = description, status = status.wire, id = id, description = description, note = note)
 }
 
 @Serializable
@@ -48,8 +51,11 @@ data class StepRecord(
 
 @Serializable
 data class Finding(
-    val item: String,
+    val item: String = "",
     val quote: String = "",
+    val afterReads: Int = 0,
+    val key: String = item,
+    val value: String = quote,
 )
 
 @Serializable
@@ -64,7 +70,7 @@ data class RunOutcome(
     val verdict: String = UNVERIFIED,
     val why: String? = null,
     val enforced: Boolean = false,
-    val proven: Int? = null,
+    val proven: Int = 0,
     val target: Int? = null,
 ) {
     companion object {
@@ -125,15 +131,15 @@ data class RunLedger(
     val modelId: String = "",
     val startedAtMs: Long = System.currentTimeMillis(),
     val planVersion: Int = 0,
-    val planSteps: List<PlanStep> = emptyList(),
+    val planSteps: MutableList<PlanStep> = mutableListOf(),
     val settledSteps: Int = 0,
     val progressAtCall: Int = 0,
     val toolCalls: Int = 0,
     val stalledCalls: Int? = null,
     val surprise: String? = null,
     val surpriseAtCall: Int = 0,
-    val facts: List<String> = emptyList(),
-    val deadEnds: List<String> = emptyList(),
+    val facts: MutableList<String> = mutableListOf(),
+    val deadEnds: MutableList<String> = mutableListOf(),
     val recentSteps: List<StepRecord> = emptyList(),
     val totalSteps: Int = 0,
     val failedSteps: Int = 0,
@@ -146,6 +152,7 @@ data class RunLedger(
     val research: ResearchNote? = null,
     val endedAtMs: Long? = null,
     val endReason: String? = null,
+    val resumedFrom: String? = null,
 ) {
     val state: RunLedgerState get() = RunLedgerState(
         runId = runId,
@@ -157,6 +164,31 @@ data class RunLedger(
         deadEnds = deadEnds.toMutableList(),
         outcome = outcome?.claimed,
     )
+
+    fun finish(outcome: Any? = null, finalAnswer: String? = null) = Unit
+
+    fun addFact(key: String, value: String, source: String? = null) {
+        facts.add(key + ": " + value)
+    }
+
+    fun addDeadEnd(note: String) {
+        deadEnds.add(note)
+    }
+
+    fun setPlan(stepDescriptions: List<String>) {
+        planSteps.clear()
+        stepDescriptions.forEachIndexed { idx, desc ->
+            planSteps.add(PlanStep(id = "step_" + (idx + 1), description = desc, status = PlanStepStatus.PENDING))
+        }
+    }
+
+    fun updateStep(id: String, status: PlanStepStatus, note: String? = null) {
+        val idx = planSteps.indexOfFirst { it.id == id }
+        if (idx >= 0) {
+            val old = planSteps[idx]
+            planSteps[idx] = old.copy(status = status.wire, note = note)
+        }
+    }
 
     fun revision(): Long = (planVersion + totalSteps + facts.size + deadEnds.size).toLong()
 

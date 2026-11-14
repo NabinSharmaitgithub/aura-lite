@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.RecordVoiceOver
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.heightIn
@@ -192,7 +193,7 @@ fun VoiceSettingsScreen(vm: AuraViewModel, onNavigateToWakeWord: () -> Unit = {}
                 GroupedRow(
                     title = "Wake on unlock for notifications",
                     subtitle = if (settings.wakeOnUnlockNotifications) "Announce & reply to new notifications when unlocking" else "Off",
-                    icon = androidx.compose.material.icons.Icons.Default.Notifications,
+                    icon = androidx.compose.material.icons.Icons.Outlined.Notifications,
                     trailing = {
                         AuraSwitch(
                             checked = settings.wakeOnUnlockNotifications,

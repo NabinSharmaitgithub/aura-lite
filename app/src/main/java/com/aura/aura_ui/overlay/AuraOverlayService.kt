@@ -66,6 +66,10 @@ class AuraOverlayService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var notificationJob: Job? = null
 
+    fun updateLiveNotification(agent: String, output: String) = Companion.updateLiveNotification(agent, output)
+    fun updateLiveNotificationProgress(agent: String, step: String) = Companion.updateLiveNotificationProgress(agent, step)
+    fun endVoiceConversation() = Companion.endVoiceConversation()
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -452,6 +456,7 @@ class AuraOverlayService : Service() {
 
         @Volatile
         private var instance: AuraOverlayService? = null
+        fun getInstance(): AuraOverlayService? = instance
 
         fun getInstance(): AuraOverlayService? = instance
 

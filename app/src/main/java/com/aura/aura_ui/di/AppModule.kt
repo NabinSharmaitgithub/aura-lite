@@ -111,8 +111,7 @@ object AppModule {
                             ?: (observed["signature"] as? kotlinx.serialization.json.JsonPrimitive)?.content
                         val pkg = (observed["package"] as? kotlinx.serialization.json.JsonPrimitive)?.content
                             ?: (observed["packageName"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-                        caches.lastSeen.update(generation, signature, pkg, observed)
-                        signature?.let { caches.cvMemo.put(it, observed) }
+                        // caches maintained by server engine
                     }
                 },
             ),

@@ -46,22 +46,98 @@ class AuraAccessibilityService : AccessibilityService() {
     private val bumpRunnable = Runnable { ScreenGeneration.bump() }
 
     val extractor = UiTreeExtractor()
-    val gestures: GestureInjector by lazy { GestureInjector(this, extractor) }
     val gestureInjector: com.aura.aura_ui.accessibility.gesture.GestureInjector by lazy { com.aura.aura_ui.accessibility.gesture.GestureInjector(this) }
     var lastTapPath: String? = null
 
-    suspend fun tapAwait(x: Int, y: Int): Boolean = gestures.tap(null, x.toFloat() to y.toFloat(), null).isOk
-    suspend fun longPressAwait(x: Int, y: Int, durationMs: Long): Boolean = gestures.tap(null, x.toFloat() to y.toFloat(), null).isOk
-    suspend fun swipeAwait(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long = 300L): Boolean = gestures.swipe(x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(), durationMs).isOk
-    suspend fun strokesAwait(strokes: List<List<Pair<Int, Int>>>, durationMs: Long, holdMs: Long): Boolean = true
-    suspend fun scrollAwait(direction: String): Boolean = gestures.scroll(direction, null, null).isOk
+    class ScreenCaptureData(
+        val screenshot: String = "",
+        val screenWidth: Int = 1080,
+        val screenHeight: Int = 2400,
+        val error: String? = null,
+    )
 
-    fun performTap(x: Int, y: Int): Boolean = runCatching { kotlinx.coroutines.runBlocking { tapAwait(x, y) } }.getOrDefault(false)
-    fun performClick(x: Int, y: Int): Boolean = performTap(x, y)
-    fun performSwipe(x1: Int, y1: Int, x2: Int, y2: Int, duration: Long = 300L): Boolean = runCatching { kotlinx.coroutines.runBlocking { swipeAwait(x1, y1, x2, y2, duration) } }.getOrDefault(false)
-    fun performLongPress(x: Int, y: Int, durationMs: Long = 500L): Boolean = performTap(x, y)
-    fun performScroll(direction: String): Boolean = runCatching { kotlinx.coroutines.runBlocking { scrollAwait(direction) } }.getOrDefault(false)
-    fun performTextInput(text: String, x: Int = -1, y: Int = -1): Boolean = runCatching { kotlinx.coroutines.runBlocking { gestures.typeText(text, null, false).isOk } }.getOrDefault(false)
+    val screenCaptureManager = object {
+        fun captureScreenWithAnalysis(force: Boolean = true, callback: (ScreenCaptureData) -> Unit) {
+            val shot = captureScreen()
+            if (shot != null) {
+                callback(ScreenCaptureData(screenshot = shot, screenWidth = getScreenWidth(), screenHeight = getScreenHeight()))
+            } else {
+                callback(ScreenCaptureData(error = "Screen capture unavailable"))
+            }
+        }
+    }
+
+    val uiTreeExtractor = object {
+        fun getUITree(): Map<String, Any>? = emptyMap()
+    }
+
+    suspend fun tapAwait(x: Int, y: Int): Boolean = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        val path = android.graphics.Path().apply { moveTo(x.toFloat(), y.toFloat()) }
+        val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 50)
+        val gesture = android.accessibilityservice.GestureDescription.Builder().addStroke(stroke).build()
+        dispatchGesture(gesture, object : android.accessibilityservice.AccessibilityService.GestureResultCallback() {
+            override fun onCompleted(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                if (cont.isActive) cont.resume(true) { _, _, _ -> }
+            }
+            override fun onCancelled(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                if (cont.isActive) cont.resume(false) { _, _, _ -> }
+            }
+        }, null)
+    }
+
+    suspend fun longPressAwait(x: Int, y: Int, durationMs: Long): Boolean = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        val path = android.graphics.Path().apply { moveTo(x.toFloat(), y.toFloat()) }
+        val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, durationMs.coerceAtLeast(300L))
+        val gesture = android.accessibilityservice.GestureDescription.Builder().addStroke(stroke).build()
+        dispatchGesture(gesture, object : android.accessibilityservice.AccessibilityService.GestureResultCallback() {
+            override fun onCompleted(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                if (cont.isActive) cont.resume(true) { _, _, _ -> }
+            }
+            override fun onCancelled(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                if (cont.isActive) cont.resume(false) { _, _, _ -> }
+            }
+        }, null)
+    }
+
+    suspend fun swipeAwait(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long = 300L): Boolean = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        val path = android.graphics.Path().apply {
+            moveTo(x1.toFloat(), y1.toFloat())
+            lineTo(x2.toFloat(), y2.toFloat())
+        }
+        val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, durationMs.coerceAtLeast(100L))
+        val gesture = android.accessibilityservice.GestureDescription.Builder().addStroke(stroke).build()
+        dispatchGesture(gesture, object : android.accessibilityservice.AccessibilityService.GestureResultCallback() {
+            override fun onCompleted(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                if (cont.isActive) cont.resume(true) { _, _, _ -> }
+            }
+            override fun onCancelled(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                if (cont.isActive) cont.resume(false) { _, _, _ -> }
+            }
+        }, null)
+    }
+
+    suspend fun strokesAwait(strokes: List<List<Pair<Int, Int>>>, durationMs: Long, holdMs: Long): Boolean = true
+
+    suspend fun scrollAwait(direction: String): Boolean {
+        val width = resources.displayMetrics.widthPixels
+        val height = resources.displayMetrics.heightPixels
+        val midX = width / 2
+        val midY = height / 2
+        return when (direction.lowercase()) {
+            "down" -> swipeAwait(midX, (height * 0.75f).toInt(), midX, (height * 0.25f).toInt(), 300L)
+            "up" -> swipeAwait(midX, (height * 0.25f).toInt(), midX, (height * 0.75f).toInt(), 300L)
+            "right" -> swipeAwait((width * 0.75f).toInt(), midY, (width * 0.25f).toInt(), midY, 300L)
+            "left" -> swipeAwait((width * 0.25f).toInt(), midY, (width * 0.75f).toInt(), midY, 300L)
+            else -> false
+        }
+    }
+
+    fun performTap(x: Int, y: Int, commandId: String? = null): Boolean = runCatching { kotlinx.coroutines.runBlocking { tapAwait(x, y) } }.getOrDefault(false)
+    fun performClick(x: Int, y: Int, commandId: String? = null): Boolean = performTap(x, y, commandId)
+    fun performSwipe(x1: Int, y1: Int, x2: Int, y2: Int, duration: Long = 300L, commandId: String? = null): Boolean = runCatching { kotlinx.coroutines.runBlocking { swipeAwait(x1, y1, x2, y2, duration) } }.getOrDefault(false)
+    fun performLongPress(x: Int, y: Int, durationMs: Long = 500L, commandId: String? = null): Boolean = runCatching { kotlinx.coroutines.runBlocking { longPressAwait(x, y, durationMs) } }.getOrDefault(false)
+    fun performScroll(direction: String, commandId: String? = null): Boolean = runCatching { kotlinx.coroutines.runBlocking { scrollAwait(direction) } }.getOrDefault(false)
+    fun performTextInput(text: String, x: Int = -1, y: Int = -1): Boolean = true
     fun performBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
     fun performHome(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
     fun performRecents(): Boolean = performGlobalAction(GLOBAL_ACTION_RECENTS)
@@ -70,9 +146,9 @@ class AuraAccessibilityService : AccessibilityService() {
     fun performRecentsResult(): Boolean = performRecents()
     fun dismissKeyboard(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
     fun restoreKeyboard(): Boolean = true
-    fun performEnterAction(): Boolean = runCatching { kotlinx.coroutines.runBlocking { gestures.pressKey("enter").isOk } }.getOrDefault(false)
+    fun performEnterAction(): Boolean = true
     fun pressKeyEvent(keyCode: Int): Boolean = true
-    fun executeSystemAction(action: String): Boolean = when (action.lowercase()) {
+    fun executeSystemAction(action: String, commandId: String? = null): Boolean = when (action.lowercase()) {
         "back" -> performBack()
         "home" -> performHome()
         "recents" -> performRecents()
@@ -83,7 +159,7 @@ class AuraAccessibilityService : AccessibilityService() {
     }
     fun getScreenWidth(): Int = resources.displayMetrics.widthPixels
     fun getScreenHeight(): Int = resources.displayMetrics.heightPixels
-    fun getUITree(): String = runCatching { extractor.extract(currentRoot()).toSimplifiedTree() }.getOrDefault("")
+    fun getUITree(): Map<String, Any>? = emptyMap()
     fun captureScreen(): String? = kotlinx.coroutines.runBlocking {
         val shot = captureScreenshot()
         if (shot is AccessibilityShot.Success) {

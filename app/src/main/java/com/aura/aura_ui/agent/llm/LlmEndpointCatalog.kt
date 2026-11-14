@@ -254,6 +254,8 @@ object LlmEndpointCatalog {
 
     fun builtinById(id: String): LlmEndpoint? = builtIns.firstOrNull { it.id == id }
 
+    fun supportsVision(endpoint: LlmEndpoint, model: String?): Boolean = endpoint.visionInference != VisionInference.NEVER
+
     fun fromCustomJson(raw: String): LlmEndpoint? {
         if (raw.isBlank()) return null
         return runCatching {

@@ -44,10 +44,17 @@ data class AuraPermission(
      * cannot see — where `isGranted` returning true is NOT proof it works.
      */
     val oemNote: ((Context) -> String?)? = null,
-)
+) {
+    val permission: String get() = runtimePermissions.firstOrNull() ?: id
+    val optional: Boolean get() = tier == 2
+    val label: String get() = title
+    val purpose: String get() = why
+    val fixPath: String get() = if (kind == PermissionKind.SPECIAL) "System Settings" else "Runtime Dialog"
+}
 
 object PermissionRegistry {
 
+    val entries: List<AuraPermission> get() = all
     val all: List<AuraPermission> = listOf(
         // ── Tier 1 — core, requested at onboarding ─────────────────────────
         AuraPermission(

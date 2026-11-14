@@ -227,8 +227,8 @@ fun RunTodoList(
     val steps = state.planSteps
     if (steps.isEmpty()) return
     var expanded by remember { mutableStateOf(true) }
-    val doneCount = steps.count { it.status == "done" }
-    val activeStep = steps.firstOrNull { it.status == "in_progress" }
+    val doneCount = steps.count { it.status == "done" || it.typedStatus == PlanStepStatus.DONE }
+    val activeStep = steps.firstOrNull { it.status == "in_progress" || it.typedStatus == PlanStepStatus.IN_PROGRESS }
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -256,6 +256,7 @@ fun RunTodoList(
             Spacer(Modifier.height(6.dp))
             steps.forEach { step ->
                 val stepColor = when (step.typedStatus) {
+                    PlanStepStatus.FAILED -> mono.blood
                     PlanStepStatus.DONE -> mono.successDot
                     PlanStepStatus.IN_PROGRESS -> mono.blood
                     PlanStepStatus.BLOCKED -> mono.blood
@@ -290,6 +291,7 @@ fun RunTodoList(
                     }
                     Text(
                         when (step.typedStatus) {
+                            PlanStepStatus.FAILED -> "FAILED"
                             PlanStepStatus.DONE -> "DONE"
                             PlanStepStatus.IN_PROGRESS -> "NOW"
                             PlanStepStatus.BLOCKED -> "BLOCKED"
@@ -298,6 +300,7 @@ fun RunTodoList(
                         },
                         style = MonoStyleSmall,
                         color = when (step.typedStatus) {
+                            PlanStepStatus.FAILED -> mono.blood
                             PlanStepStatus.DONE -> mono.successDot
                             PlanStepStatus.IN_PROGRESS -> mono.blood
                             PlanStepStatus.BLOCKED -> mono.blood

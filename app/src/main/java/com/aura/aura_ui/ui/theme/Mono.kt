@@ -69,6 +69,8 @@ object Mono {
     val ShapeChip = RoundedCornerShape(12.dp)
     val ShapePill = RoundedCornerShape(999.dp)
 
+    fun scheme(dark: Boolean = false): MonoScheme = if (dark) MonoScheme.Dark else MonoScheme.Light
+
     object Space {
         val xs: Dp = Mono.xs
         val sm: Dp = Mono.sm

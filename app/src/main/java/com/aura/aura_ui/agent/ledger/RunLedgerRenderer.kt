@@ -178,6 +178,7 @@ object RunLedgerRenderer {
         PlanStepStatus.DONE -> "[x]"
         PlanStepStatus.SKIPPED -> "[-]"
         PlanStepStatus.FAILED -> "[!]"
+        else -> "[?]"
     }
 
     /** The step being worked on, kept in view so a long step does not drift into another task. */

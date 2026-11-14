@@ -50,9 +50,7 @@ class LlmClient @Inject constructor(private val http: OkHttpClient) {
             endpoint.profile.reasoningParam?.let { param ->
                 if (param == "reasoning_effort") put(param, "medium")
             }
-            if (extraBody != null) {
-                extraBody.forEach { (k, v) -> put(k, v) }
-            }
+            extraBody?.let { for ((k, v) in it) put(k, v) }
         }.toString()
 
         val request = Request.Builder()

@@ -10,6 +10,8 @@ data class WebRtcApprovalRequest(
     val verificationCode: String = "",
     val host: String? = null,
     val platform: String? = null,
+    val onApprove: () -> Unit = {},
+    val onDeny: () -> Unit = {},
 )
 
 sealed interface McpServerHealth {

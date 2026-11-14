@@ -9,6 +9,7 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.IBinder
+import android.util.Log
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
@@ -121,7 +122,7 @@ class VisualFeedbackOverlayService : Service() {
             timeoutSeconds: Float,
             allowCancel: Boolean,
             actionType: String?,
-            metadata: Map<String, Any>,
+            metadata: Any?,
             onResponse: (org.json.JSONObject) -> Unit
         ) {
             Log.i("VisualFeedbackOverlay", "showHITLDialog: $title")
