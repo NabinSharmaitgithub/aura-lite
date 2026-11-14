@@ -81,7 +81,7 @@ data class ProviderProfile(
         ReasoningRequestStyle.OPENAI_REASONING_EFFORT -> "reasoning_effort"
         ReasoningRequestStyle.OPENROUTER_REASONING -> "reasoning"
         else -> null
-    } {
+    }
     /**
      * True when this provider can carry a user-set thinking level ([GenerationConfig.reasoning]),
      * so the settings UI shows the thinking control. Temperature is universal and gated separately.
