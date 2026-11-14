@@ -40,7 +40,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * plain-JVM tests and costs ~1 ms on a real tree (a few hundred nodes) over a snapshot
  * the caller had already paid for.
  */
-internal object ScreenSignature {
+object ScreenSignature {
 
     /** Bounds grid, in device px. Coarse enough to absorb animation jitter and
      * sub-pixel layout drift, fine enough that two different layouts collide only
