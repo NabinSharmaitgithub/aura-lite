@@ -1,13 +1,5 @@
 package com.aura.mcp.server
-interface McpClient {
-    suspend fun initialize(): kotlinx.serialization.json.JsonObject
-    fun listTools(): List<com.aura.mcp.bridge.ToolDefinition>
-    suspend fun callTool(name: String, args: kotlinx.serialization.json.JsonObject): com.aura.mcp.bridge.ToolResult
-    fun listResources(): kotlinx.serialization.json.JsonArray
-    fun readResource(uri: String): kotlinx.serialization.json.JsonObject?
-    fun listPrompts(): kotlinx.serialization.json.JsonArray
-    fun getPrompt(name: String, arguments: kotlinx.serialization.json.JsonObject): kotlinx.serialization.json.JsonObject?
-}
+
 
 
 import com.aura.mcp.bridge.ContactsBridge
@@ -40,6 +32,16 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
+
+interface McpClient {
+    suspend fun initialize(): kotlinx.serialization.json.JsonObject
+    fun listTools(): List<com.aura.mcp.bridge.ToolDefinition>
+    suspend fun callTool(name: String, args: kotlinx.serialization.json.JsonObject): com.aura.mcp.bridge.ToolResult
+    fun listResources(): kotlinx.serialization.json.JsonArray
+    fun readResource(uri: String): kotlinx.serialization.json.JsonObject?
+    fun listPrompts(): kotlinx.serialization.json.JsonArray
+    fun getPrompt(name: String, arguments: kotlinx.serialization.json.JsonObject): kotlinx.serialization.json.JsonObject?
+}
 
 /**
  * In-process bridge between the on-device agent (an MCP **client**) and the
