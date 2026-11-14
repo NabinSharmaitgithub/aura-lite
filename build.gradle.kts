@@ -11,3 +11,14 @@ plugins {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+
+subprojects {
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
+        compilerOptions {
+            freeCompilerArgs.addAll(
+                "-Xskip-metadata-version-check",
+                "-Xskip-prerelease-check"
+            )
+        }
+    }
+}

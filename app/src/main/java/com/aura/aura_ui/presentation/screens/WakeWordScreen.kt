@@ -232,7 +232,7 @@ fun WakeWordScreen(
                                             !permissions.microphone -> Color(0xFFFF3B30)
                                             wakeServiceState == WakeWordState.DETECTING -> Color(0xFF34C759)
                                             wakeServiceState == WakeWordState.PAUSED_FOR_RUN -> Color(0xFFFF9500)
-                                            else -> Color(0xFF34C759),
+                                            else -> Color(0xFF34C759)
                                         },
                                     ),
                                 contentAlignment = Alignment.Center,
@@ -262,7 +262,7 @@ fun WakeWordScreen(
                                     !settings.wakeWordEnabled -> "Detection disabled"
                                     wakeServiceState == WakeWordState.DETECTING -> "Listening continuously in background"
                                     wakeServiceState == WakeWordState.PAUSED_FOR_RUN -> "Paused during voice action"
-                                    else -> "Service active & ready",
+                                    else -> "Service active & ready"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (settings.wakeWordEnabled && permissions.microphone) Color(0xFF34C759) else mono.textSecondary,

@@ -232,7 +232,7 @@ class PerceptionCacheTest {
         cache.clear()
         assertFalse(cache.contains(1))
         assertNull(cache.getCoordinates(1))
-        assertEquals(emptyList(), cache.cachedSomIds())
+        assertEquals(emptyList<Int>(), cache.cachedSomIds())
     }
 
     @Test
@@ -241,7 +241,7 @@ class PerceptionCacheTest {
 
         assertNull(cache.getCoordinates(1))
         assertFalse(cache.contains(1))
-        assertEquals(emptyList(), cache.cachedSomIds())
+        assertEquals(emptyList<Int>(), cache.cachedSomIds())
     }
 
     @Test

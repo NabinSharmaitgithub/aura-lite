@@ -1,4 +1,14 @@
 package com.aura.mcp.server
+interface McpClient {
+    suspend fun initialize(): kotlinx.serialization.json.JsonObject
+    fun listTools(): List<com.aura.mcp.bridge.ToolDefinition>
+    suspend fun callTool(name: String, args: kotlinx.serialization.json.JsonObject): com.aura.mcp.bridge.ToolResult
+    fun listResources(): kotlinx.serialization.json.JsonArray
+    fun readResource(uri: String): kotlinx.serialization.json.JsonObject?
+    fun listPrompts(): kotlinx.serialization.json.JsonArray
+    fun getPrompt(name: String, arguments: kotlinx.serialization.json.JsonObject): kotlinx.serialization.json.JsonObject?
+}
+
 
 import com.aura.mcp.bridge.ContactsBridge
 import com.aura.mcp.bridge.DeepLinkBridge
@@ -127,7 +137,29 @@ class InProcessMcpHandle internal constructor(
  * The single public entry point :app needs — everything `internal`
  * (McpServerBuilder, McpPrincipalElement, scope wiring) stays in this module.
  */
-object InProcessMcpServer {
+class InProcessMcpServer(private val registry: com.aura.mcp.tools.McpToolRegistry? = null) {
+    fun listTools(): List<com.aura.mcp.bridge.ToolDefinition> = com.aura.mcp.tools.ToolCatalog.all
+    suspend fun call(name: String, args: kotlinx.serialization.json.JsonObject): com.aura.mcp.bridge.ToolResult =
+        registry?.execute(name, args) ?: com.aura.mcp.bridge.ToolResult.fail(com.aura.mcp.bridge.ToolError.notFound("No registry"))
+    fun initialize(): kotlinx.serialization.json.JsonObject = McpRpc.initializeResult()
+    fun listResources(): kotlinx.serialization.json.JsonArray = McpResources.list()
+    fun readResource(uri: String): kotlinx.serialization.json.JsonObject? = McpResources.read(uri)
+    fun listPrompts(): kotlinx.serialization.json.JsonArray = McpPrompts.list()
+    fun getPrompt(name: String, arguments: kotlinx.serialization.json.JsonObject): kotlinx.serialization.json.JsonObject? = McpPrompts.get(name, arguments)
+
+    fun asClient(): McpClient = object : McpClient {
+        override suspend fun initialize(): kotlinx.serialization.json.JsonObject = this@InProcessMcpServer.initialize()
+        override fun listTools(): List<com.aura.mcp.bridge.ToolDefinition> = this@InProcessMcpServer.listTools()
+        override suspend fun callTool(name: String, args: kotlinx.serialization.json.JsonObject): com.aura.mcp.bridge.ToolResult =
+            this@InProcessMcpServer.call(name, args)
+        override fun listResources(): kotlinx.serialization.json.JsonArray = this@InProcessMcpServer.listResources()
+        override fun readResource(uri: String): kotlinx.serialization.json.JsonObject? = this@InProcessMcpServer.readResource(uri)
+        override fun listPrompts(): kotlinx.serialization.json.JsonArray = this@InProcessMcpServer.listPrompts()
+        override fun getPrompt(name: String, arguments: kotlinx.serialization.json.JsonObject): kotlinx.serialization.json.JsonObject? =
+            this@InProcessMcpServer.getPrompt(name, arguments)
+    }
+
+    companion object {
 
     private const val SERVER_NAME = "aura-inprocess"
     private const val SERVER_VERSION = "1.0.0"
@@ -206,4 +238,5 @@ object InProcessMcpServer {
 
         return InProcessMcpHandle(clientTransport, server, scope)
     }
+}
 }

@@ -49,7 +49,96 @@ import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
  * Kept separate from [com.aura.mcp.McpServerController] so future bridge-wiring
  * tests can construct the same server without spinning up a Ktor engine.
  */
-internal object McpServerBuilder {
+
+data class McpSinks(
+    val audit: McpAuditLogger? = null,
+    val session: ((String, Map<String, Any?>) -> Unit)? = null,
+    val toolPhase: ((String, String, Map<String, Any?>) -> Unit)? = null,
+    val trail: ((String, Map<String, Any?>) -> Unit)? = null,
+    val postActionObserver: ((String, kotlinx.serialization.json.JsonObject, com.aura.mcp.bridge.ToolResult) -> Unit)? = null,
+    val learnings: ((String, kotlinx.serialization.json.JsonObject, com.aura.mcp.bridge.ToolResult) -> Unit)? = null,
+)
+
+data class McpCaches(
+    val perception: PerceptionCache = PerceptionCache(),
+    val cvMemo: com.aura.mcp.cache.CvMemo = com.aura.mcp.cache.CvMemo(),
+    val lastSeen: com.aura.mcp.cache.LastSeenScreen = com.aura.mcp.cache.LastSeenScreen(),
+)
+
+class McpServerBuilder(
+    private val bridge: DeviceBridge,
+) {
+    private val enabledToolsets = linkedSetOf(com.aura.mcp.Toolset.CORE, com.aura.mcp.Toolset.ASSISTANT, com.aura.mcp.Toolset.BROWSER)
+    private var restrictedApps: com.aura.mcp.bridge.RestrictedAppsStore = com.aura.mcp.bridge.AllowAllRestrictedApps
+    private var approvalGate: com.aura.mcp.bridge.ApprovalGate? = null
+    private var hooks: com.aura.mcp.tools.ToolPipelineHooks? = null
+    private var sinks: McpSinks = McpSinks()
+    private var caches: McpCaches = McpCaches()
+    private var maxBatchSteps: Int = 12
+
+    fun toolsets(vararg toolsets: com.aura.mcp.Toolset) = apply {
+        if (toolsets.isNotEmpty()) {
+            enabledToolsets.clear()
+            enabledToolsets.addAll(toolsets.toList())
+        }
+    }
+    fun restrictedApps(store: com.aura.mcp.bridge.RestrictedAppsStore) = apply { restrictedApps = store }
+    fun approvalGate(gate: com.aura.mcp.bridge.ApprovalGate?) = apply { approvalGate = gate }
+    fun hooks(hooks: com.aura.mcp.tools.ToolPipelineHooks?) = apply { this.hooks = hooks }
+    fun sinks(sinks: McpSinks) = apply { this.sinks = sinks }
+    fun caches(caches: McpCaches) = apply { this.caches = caches }
+    fun maxBatchSteps(value: Int) = apply { maxBatchSteps = value.coerceIn(1, 50) }
+
+    fun registerSkillPrompt(name: String, description: String, promptText: String) = apply {
+        McpPrompts.registerSkillPrompt(name, description, promptText)
+    }
+
+    data class BuiltServer(
+        val registry: com.aura.mcp.tools.McpToolRegistry,
+        val inProcess: InProcessMcpServer,
+        val caches: McpCaches,
+        val sinks: McpSinks,
+        val toolsets: Set<com.aura.mcp.Toolset>,
+    ) {
+        fun resources() = McpResources
+        fun prompts() = McpPrompts
+        fun instructions() = com.aura.mcp.server.McpInstructions.Doctrine.text
+    }
+
+    fun build(clientId: String = "local"): BuiltServer {
+        val principal = com.aura.mcp.tools.ToolPrincipal(
+            clientId = clientId,
+            allowedToolsets = enabledToolsets.map { it.name }.toSet(),
+            allowedTools = null,
+        )
+        val registry = com.aura.mcp.tools.McpToolRegistry(
+            bridge = bridge,
+            restrictedApps = restrictedApps,
+            approvalGate = approvalGate,
+            audit = sinks.audit,
+            maxBatchSteps = maxBatchSteps,
+            clientId = clientId,
+            perceptionCache = caches.perception,
+            actionGuard = com.aura.mcp.guard.ActionGuard(caches.perception),
+            hooks = hooks,
+            principal = principal,
+            onSession = sinks.session,
+            onToolPhase = sinks.toolPhase,
+            onTrail = sinks.trail,
+            onPostAction = sinks.postActionObserver,
+            onLearnings = sinks.learnings,
+        )
+        return BuiltServer(
+            registry = registry,
+            inProcess = InProcessMcpServer(registry),
+            caches = caches,
+            sinks = sinks,
+            toolsets = enabledToolsets.toSet(),
+        )
+    }
+
+    companion object {
+
 
     fun build(
         serverName: String,
@@ -319,4 +408,5 @@ internal object McpServerBuilder {
 
         return server
     }
+}
 }
