@@ -126,3 +126,41 @@ private fun openAppRunbook(app: String): String = """
        direct_links lists one-call routes into the app.
     3. read_screen before the first tap inside the app.
 """.trimIndent()
+
+object McpPrompts {
+    private val skillPrompts = java.util.concurrent.ConcurrentHashMap<String, PromptSkill>()
+
+    fun registerSkillPrompt(name: String, description: String, promptText: String) {
+        val safe = promptSafeName(name) ?: name
+        skillPrompts[safe] = PromptSkill(name = safe, description = description, body = promptText)
+    }
+
+    fun list(): kotlinx.serialization.json.JsonArray = kotlinx.serialization.json.buildJsonArray {
+        add(kotlinx.serialization.json.buildJsonObject {
+            put("name", "automate_task")
+            put("description", "Plan and run a phone-automation task end-to-end with the right tools, safely.")
+        })
+        add(kotlinx.serialization.json.buildJsonObject {
+            put("name", "open_app")
+            put("description", "Open an app by name the reliable way: deep link if one fits, else launch_app, then read the reply.")
+        })
+        skillPrompts.values.forEach { skill ->
+            add(kotlinx.serialization.json.buildJsonObject {
+                put("name", skill.name)
+                put("description", skill.description)
+            })
+        }
+    }
+
+    fun get(name: String, arguments: kotlinx.serialization.json.JsonObject): kotlinx.serialization.json.JsonObject? {
+        val skill = skillPrompts[name]
+        return if (skill != null) {
+            kotlinx.serialization.json.buildJsonObject {
+                put("description", skill.description)
+                put("body", skill.body)
+            }
+        } else {
+            null
+        }
+    }
+}

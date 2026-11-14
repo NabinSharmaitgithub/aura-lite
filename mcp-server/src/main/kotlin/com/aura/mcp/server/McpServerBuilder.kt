@@ -51,7 +51,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
  */
 
 data class McpSinks(
-    val audit: McpAuditLogger? = null,
+    val audit: com.aura.mcp.audit.McpAuditLogger? = null,
     val session: ((String, Map<String, Any?>) -> Unit)? = null,
     val toolPhase: ((String, String, Map<String, Any?>) -> Unit)? = null,
     val trail: ((String, Map<String, Any?>) -> Unit)? = null,

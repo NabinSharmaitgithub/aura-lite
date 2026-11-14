@@ -30,7 +30,7 @@ import com.aura.mcp.tools.ScreenSignature
  * would almost never match on a real app, which would make the history dead weight.
  * Distance is counted in [ScreenGeneration] bumps — one per dispatched WRITE action.
  */
-internal class LastSeenScreen(
+class LastSeenScreen(
     private val generation: () -> Long = { ScreenGeneration.current },
     private val capacity: Int = 8,
 ) {

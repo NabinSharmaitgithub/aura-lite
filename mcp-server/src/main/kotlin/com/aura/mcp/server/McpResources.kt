@@ -79,3 +79,35 @@ internal fun Server.registerResources(deviceBridge: DeviceBridge) {
         )
     }
 }
+
+object McpResources {
+    fun list(): kotlinx.serialization.json.JsonArray = kotlinx.serialization.json.buildJsonArray {
+        add(kotlinx.serialization.json.buildJsonObject {
+            put("uri", "aura://policy/sensitive-actions")
+            put("name", "Sensitive-action policy")
+            put("mimeType", "text/markdown")
+        })
+        add(kotlinx.serialization.json.buildJsonObject {
+            put("uri", "aura://guide/tool-selection")
+            put("name", "Tool-selection guide")
+            put("mimeType", "text/markdown")
+        })
+        add(kotlinx.serialization.json.buildJsonObject {
+            put("uri", "aura://device/status")
+            put("name", "Live device status")
+            put("mimeType", "application/json")
+        })
+    }
+
+    fun read(uri: String): kotlinx.serialization.json.JsonObject? {
+        val content = when (uri) {
+            "aura://policy/sensitive-actions" -> SensitivePolicy.policyMarkdown()
+            "aura://guide/tool-selection" -> AuraInstructions.text
+            else -> return null
+        }
+        return kotlinx.serialization.json.buildJsonObject {
+            put("uri", uri)
+            put("text", content)
+        }
+    }
+}

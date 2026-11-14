@@ -23,7 +23,7 @@ import com.aura.mcp.tools.ScreenSignature
  * [TTL_MS] bounds staleness for anything a signature cannot see (a video frame behind
  * a static tree, a surface the tree does not describe).
  */
-internal class CvMemo(
+class CvMemo(
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
     /**
