@@ -33,37 +33,6 @@ sealed interface McpServerHealth {
         if (lastError != null) put("error", lastError)
     }
 
-    fun copy(
-        running: Boolean = this.running,
-        host: String = this.host,
-        port: Int = this.port,
-        toolCount: Int = this.toolCount,
-        clientCount: Int = this.clientCount,
-        startedAt: Long = this.startedAt,
-        lastError: String? = this.lastError,
-        state: String = this.state,
-    ): McpServerHealth = Simple(
-        running = running,
-        host = host,
-        port = port,
-        toolCount = toolCount,
-        clientCount = clientCount,
-        startedAt = startedAt,
-        lastError = lastError,
-        state = state,
-    )
-
-    data class Simple(
-        override val running: Boolean = false,
-        override val host: String = "127.0.0.1",
-        override val port: Int = 0,
-        override val toolCount: Int = 0,
-        override val clientCount: Int = 0,
-        override val startedAt: Long = 0L,
-        override val lastError: String? = null,
-        override val state: String = "stopped",
-    ) : McpServerHealth
-
     data object Stopped : McpServerHealth {
         override val running: Boolean = false
         override val state: String = "stopped"
@@ -84,6 +53,7 @@ sealed interface McpServerHealth {
         override val port: Int = 4816,
         override val host: String = "127.0.0.1",
         val reachableAddresses: List<String> = emptyList(),
+        val webRtcPin: String? = null,
         override val toolCount: Int = 0,
         override val clientCount: Int = 0,
         override val startedAt: Long = System.currentTimeMillis(),
@@ -102,15 +72,61 @@ sealed interface McpServerHealth {
             startedAt: Long = 0L,
             lastError: String? = null,
             state: String = "stopped",
-        ): McpServerHealth = Simple(
-            running = running,
-            host = host,
-            port = port,
-            toolCount = toolCount,
-            clientCount = clientCount,
-            startedAt = startedAt,
-            lastError = lastError,
-            state = state,
-        )
+            reachableAddresses: List<String> = emptyList(),
+            webRtcPin: String? = null,
+        ): McpServerHealth {
+            if (!lastError.isNullOrBlank()) {
+                return Crashed(lastError)
+            }
+            if (state == "starting") {
+                return Starting
+            }
+            if (!running || state == "stopped" || (port <= 0 && state != "listening")) {
+                return Stopped
+            }
+            return Listening(
+                port = port,
+                host = host,
+                reachableAddresses = reachableAddresses,
+                webRtcPin = webRtcPin,
+                toolCount = toolCount,
+                clientCount = clientCount,
+                startedAt = if (startedAt > 0L) startedAt else System.currentTimeMillis(),
+                state = state,
+            )
+        }
     }
+}
+
+fun McpServerHealth.copy(
+    running: Boolean = this.running,
+    host: String = this.host,
+    port: Int = this.port,
+    toolCount: Int = this.toolCount,
+    clientCount: Int = this.clientCount,
+    startedAt: Long = this.startedAt,
+    lastError: String? = this.lastError,
+    state: String = this.state,
+    reachableAddresses: List<String> = (this as? McpServerHealth.Listening)?.reachableAddresses ?: emptyList(),
+    webRtcPin: String? = (this as? McpServerHealth.Listening)?.webRtcPin,
+): McpServerHealth {
+    if (!lastError.isNullOrBlank()) {
+        return McpServerHealth.Crashed(lastError)
+    }
+    if (state == "starting") {
+        return McpServerHealth.Starting
+    }
+    if (!running || state == "stopped" || (port <= 0 && state != "listening")) {
+        return McpServerHealth.Stopped
+    }
+    return McpServerHealth.Listening(
+        port = port,
+        host = host,
+        reachableAddresses = reachableAddresses,
+        webRtcPin = webRtcPin,
+        toolCount = toolCount,
+        clientCount = clientCount,
+        startedAt = if (startedAt > 0L) startedAt else System.currentTimeMillis(),
+        state = state,
+    )
 }
