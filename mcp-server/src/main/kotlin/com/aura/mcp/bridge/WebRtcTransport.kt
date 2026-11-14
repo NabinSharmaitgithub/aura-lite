@@ -405,7 +405,7 @@ class WebRtcTransport(
         if (!promoted) { drop(peer); return false }
         previous?.let { it.close(); clientGone(it) }
         val tokenId = token.take(8)
-        val toolsets = trustedClients.clients.value.firstOrNull { it.token == token }?.enabledToolsets ?: setOf("CORE", "ASSISTANT", "BROWSER")
+        val toolsets = trustedClients.clients.value.firstOrNull { it.token == token }?.enabledToolsets?.map { it.name }?.toSet() ?: setOf("CORE", "ASSISTANT", "BROWSER")
         onNewClient?.invoke(ApprovedClient(tokenId, meta.name, token, toolsets))
         peer.phase = PeerPhase.APPROVED
         peer.client = ClientRecord(

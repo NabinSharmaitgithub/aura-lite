@@ -28,7 +28,7 @@ import com.aura.mcp.tools.UiTreeToElements
  * Thread-safe via simple @Volatile and atomic reads (no mutation of the map itself,
  * only replacement of the reference).
  */
-internal class PerceptionCache(
+class PerceptionCache(
     private val generation: () -> Long = { ScreenGeneration.current },
     private val activity: () -> Long = { ScreenActivity.meaningfulCount },
     /**
@@ -260,6 +260,10 @@ internal class PerceptionCache(
      * @return Pair(center_x, center_y) in full-resolution device pixels, or null if not cached
      */
     fun getCoordinates(somId: Int): Pair<Int, Int>? = capture.coordinates[somId]
+
+    fun get(somId: Int): Pair<Int, Int>? = getCoordinates(somId)
+
+    fun size(): Int = cachedSomIds().size
 
     /**
      * Whether [somId]'s element carried a non-blank label at the last perceive —

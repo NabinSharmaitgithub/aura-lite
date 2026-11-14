@@ -13,6 +13,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 
 data class TrustedDevice(
     val clientId: String,
@@ -101,7 +102,7 @@ class TrustedDeviceStore(context: Context) {
     private fun persist(devices: Map<String, TrustedDevice>) {
         val root = buildJsonObject {
             devices.forEach { (id, d) ->
-                put(id, buildJsonObject {
+                putJsonObject(id) {
                     put("clientId", d.clientId)
                     put("name", d.name)
                     put("tokenHash", d.tokenHash)
@@ -109,7 +110,7 @@ class TrustedDeviceStore(context: Context) {
                     put("lastSeenAt", d.lastSeenAt)
                     put("scopes", d.scopes.joinToString(","))
                     put("canApproveAuto", d.canApproveAuto)
-                })
+                }
             }
         }
         prefs.edit().putString(KEY, root.toString()).apply()

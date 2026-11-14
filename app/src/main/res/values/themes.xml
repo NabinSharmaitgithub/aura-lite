@@ -7,6 +7,8 @@
         <item name="android:windowLightStatusBar">true</item>
     </style>
 
+    <style name="Theme.Aura_ui" parent="Theme.Aura" />
+
     <style name="Theme.Aura.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/aura_ink</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_aura_mark</item>

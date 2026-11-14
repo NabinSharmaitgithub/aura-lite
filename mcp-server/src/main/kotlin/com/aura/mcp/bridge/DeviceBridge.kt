@@ -114,6 +114,17 @@ interface DeviceBridge {
 
     /** Unlock the device: wake screen, dismiss keyguard, and enter optional PIN. */
     suspend fun performUnlock(pin: String? = null): Boolean = false
+
+    suspend fun execute(
+        tool: String,
+        args: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap())
+    ): ToolResult = ToolResult.fail(ToolError.notFound("Tool not implemented: $tool"))
+
+    suspend fun foregroundPackage(): String? = runCatching { getDeviceStatus().foregroundPackage }.getOrNull()
+
+    suspend fun startWatching(events: List<String>) = Unit
+
+    suspend fun stopWatching() = Unit
 }
 
 enum class VolumeDirection { UP, DOWN, MUTE }

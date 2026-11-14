@@ -26,7 +26,7 @@ class ActionGuard(
         if (tool !in targetTools || perceptionCache == null) return Decision.Allow
         val somId = args["som_id"]?.jsonPrimitive?.intOrNull
             ?: args["index"]?.jsonPrimitive?.intOrNull
-        if (somId != null && perceptionCache.get(somId) == null && perceptionCache.size() > 0) {
+        if (somId != null && !perceptionCache.contains(somId) && perceptionCache.cachedSomIds().isNotEmpty()) {
             // Only refuse when cache is populated but handle missing (likely stale).
             return Decision.deny("Target som_id/index $somId is not in the current perception cache. Call read_screen/perceive_screen again.")
         }

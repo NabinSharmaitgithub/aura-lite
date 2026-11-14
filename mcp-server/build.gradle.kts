@@ -2,6 +2,8 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
@@ -19,7 +21,7 @@ android {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "consumer-rules.pro"
             )
         }
     }
@@ -45,11 +47,24 @@ kotlin {
 }
 
 dependencies {
-    implementation(libs.mcp.kotlin.sdk.server)
+    implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+    implementation(libs.okhttp)
+    implementation(libs.bcpkix)
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.netty)
+    implementation(libs.ktor.server.content.negotiation)
+    implementation(libs.ktor.server.status.pages)
+    implementation(libs.ktor.serialization.json)
+    implementation(libs.androidx.security.crypto)
     implementation(libs.webrtc)
+
+    // MCP SDK
+    implementation(libs.mcp.kotlin.sdk.server)
 
     // SLF4J — Ktor / WebRTC logging
     implementation("org.slf4j:slf4j-api:2.0.13")

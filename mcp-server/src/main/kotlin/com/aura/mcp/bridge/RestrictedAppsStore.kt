@@ -50,60 +50,62 @@ data class RestrictedAppEntry(
 )
 
 /**
- * User-managed list of apps AURA should stay out of, persisted as one JSON blob —
- * same shape/pattern as [TrustedClientsStore]. Persistence is injected (load/save
- * lambdas) so this is JVM-testable; on device it's backed by SharedPreferences via
- * `com.aura.aura_ui.mcp.AppRestrictedApps` in the app module.
- *
- * Exposes a [StateFlow] snapshot so the Settings screen and the (Phase 2)
- * foreground-gate enforcement observe the exact same instance. All mutations are
- * synchronized — callers include the accessibility event thread and the UI.
+ * User-managed list of apps AURA should stay out of, persisted as one JSON blob.
  */
-class RestrictedAppsStore(
+interface RestrictedAppsStore {
+    val entries: StateFlow<List<RestrictedAppEntry>> get() = MutableStateFlow(emptyList())
+    fun contains(packageName: String?): Boolean
+    fun entryFor(packageName: String?): RestrictedAppEntry? = null
+    fun isBlocked(packageName: String): Boolean = contains(packageName)
+    fun blockedPackages(): Set<String> = emptySet()
+    fun upsert(entry: RestrictedAppEntry) {}
+    fun remove(packageName: String) {}
+    fun updateTier(packageName: String, tier: RestrictedTier) {}
+    fun mergeSuggestions(suggestions: List<RestrictedAppEntry>) {}
+    fun clearAll() {}
+}
+
+open class RestrictedAppsStoreImpl(
     private val load: () -> String?,
     private val save: (String) -> Unit,
-) {
+) : RestrictedAppsStore {
     private val json = Json { ignoreUnknownKeys = true }
     private val lock = Any()
 
     private val _entries = MutableStateFlow(readInitial())
-    val entries: StateFlow<List<RestrictedAppEntry>> = _entries.asStateFlow()
+    override val entries: StateFlow<List<RestrictedAppEntry>> = _entries.asStateFlow()
 
-    /** True if [packageName] is restricted under any tier. */
-    fun contains(packageName: String?): Boolean =
+    override fun contains(packageName: String?): Boolean =
         !packageName.isNullOrBlank() && _entries.value.any { it.packageName == packageName }
 
-    fun entryFor(packageName: String?): RestrictedAppEntry? =
+    override fun isBlocked(packageName: String): Boolean = contains(packageName)
+
+    override fun blockedPackages(): Set<String> = _entries.value.map { it.packageName }.toSet()
+
+    override fun entryFor(packageName: String?): RestrictedAppEntry? =
         packageName?.let { pkg -> _entries.value.firstOrNull { it.packageName == pkg } }
 
-    /** Add a new entry, or replace the existing one for the same [RestrictedAppEntry.packageName]. */
-    fun upsert(entry: RestrictedAppEntry) {
+    override fun upsert(entry: RestrictedAppEntry) {
         synchronized(lock) {
             val others = _entries.value.filterNot { it.packageName == entry.packageName }
             persist(others + entry)
         }
     }
 
-    fun remove(packageName: String) {
+    override fun remove(packageName: String) {
         synchronized(lock) {
             persist(_entries.value.filterNot { it.packageName == packageName })
         }
     }
 
-    fun updateTier(packageName: String, tier: RestrictedTier) {
+    override fun updateTier(packageName: String, tier: RestrictedTier) {
         synchronized(lock) {
             if (_entries.value.none { it.packageName == packageName }) return
             persist(_entries.value.map { if (it.packageName == packageName) it.copy(tier = tier) else it })
         }
     }
 
-    /**
-     * Merge freshly-classified [suggestions] into the store: adds any package not
-     * already present (as `LLM_SUGGESTED`, default tier [RestrictedTier.DECLINE_ONLY]).
-     * Never overwrites an existing entry — a user's prior tier choice or a previous
-     * accept/reject always wins over a re-scan.
-     */
-    fun mergeSuggestions(suggestions: List<RestrictedAppEntry>) {
+    override fun mergeSuggestions(suggestions: List<RestrictedAppEntry>) {
         synchronized(lock) {
             val existingPackages = _entries.value.map { it.packageName }.toSet()
             val fresh = suggestions.filterNot { it.packageName in existingPackages }
@@ -112,7 +114,7 @@ class RestrictedAppsStore(
         }
     }
 
-    fun clearAll() {
+    override fun clearAll() {
         synchronized(lock) { persist(emptyList()) }
     }
 
@@ -126,4 +128,15 @@ class RestrictedAppsStore(
         return runCatching { json.decodeFromString<List<RestrictedAppEntry>>(raw) }
             .getOrElse { emptyList() }
     }
+}
+
+fun RestrictedAppsStore(
+    load: () -> String? = { null },
+    save: (String) -> Unit = {},
+): RestrictedAppsStore = RestrictedAppsStoreImpl(load, save)
+
+val AllowAllRestrictedApps: RestrictedAppsStore = object : RestrictedAppsStore {
+    override fun contains(packageName: String?) = false
+    override fun isBlocked(packageName: String) = false
+    override fun blockedPackages(): Set<String> = emptySet()
 }

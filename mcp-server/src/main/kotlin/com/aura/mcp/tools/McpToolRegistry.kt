@@ -118,7 +118,7 @@ class McpToolRegistry(
             return executeBatch(args, started)
         }
 
-        val foreground = runCatching { bridge.foregroundPackage() }.getOrNull()
+        val foreground: String? = runCatching { bridge.foregroundPackage() }.getOrNull()
 
         // Sensitive policy (fail-closed)
         val policy = SensitivePolicy.evaluate(name, args, foreground)
