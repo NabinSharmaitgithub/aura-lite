@@ -8,6 +8,9 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -34,6 +37,8 @@ import kotlin.concurrent.thread
  * So the requirement is not "be fast" — it is **fail loudly and in bounded time**, because
  * only a failure can reach the retry ladder or an honest message to the user.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class AgentHttpTimeoutTest {
 
     /**
