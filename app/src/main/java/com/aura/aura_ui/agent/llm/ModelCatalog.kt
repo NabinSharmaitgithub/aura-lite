@@ -33,7 +33,11 @@ class ModelCatalog @Inject constructor(private val http: OkHttpClient) {
                 client.newCall(request).execute().use { response ->
                     val body = response.body?.string().orEmpty()
                     if (!response.isSuccessful) {
-                        throw ModelFetchError("Model list failed: HTTP ")
+                        val detail = body.take(200).trim()
+                        throw ModelFetchError(
+                            if (detail.isNotBlank()) "Model list failed: HTTP ${response.code} — $detail"
+                            else "Model list failed: HTTP ${response.code}"
+                        )
                     }
                     parse(endpoint, body)
                 }
@@ -106,7 +110,7 @@ internal fun Request.Builder.applyAuth(endpoint: LlmEndpoint, key: String): Requ
     header("Accept", "application/json")
     endpoint.profile.extraHeaders.forEach { (name, value) -> header(name, value) }
     when (endpoint.authScheme) {
-        AuthScheme.BEARER -> if (key.isNotBlank()) header("Authorization", "Bearer ")
+        AuthScheme.BEARER -> if (key.isNotBlank()) header("Authorization", "Bearer $key")
         AuthScheme.X_GOOG_API_KEY -> if (key.isNotBlank()) header("x-goog-api-key", key)
         AuthScheme.ANTHROPIC_X_API_KEY -> if (key.isNotBlank()) header("x-api-key", key)
         AuthScheme.NONE -> Unit
@@ -116,7 +120,7 @@ internal fun Request.Builder.applyAuth(endpoint: LlmEndpoint, key: String): Requ
 fun LlmEndpoint.authHeaders(key: String): Map<String, String> = buildMap {
     putAll(profile.extraHeaders)
     when (authScheme) {
-        AuthScheme.BEARER -> if (key.isNotBlank()) put("Authorization", "Bearer ")
+        AuthScheme.BEARER -> if (key.isNotBlank()) put("Authorization", "Bearer $key")
         AuthScheme.X_GOOG_API_KEY -> if (key.isNotBlank()) put("x-goog-api-key", key)
         AuthScheme.ANTHROPIC_X_API_KEY -> if (key.isNotBlank()) put("x-api-key", key)
         AuthScheme.NONE -> Unit

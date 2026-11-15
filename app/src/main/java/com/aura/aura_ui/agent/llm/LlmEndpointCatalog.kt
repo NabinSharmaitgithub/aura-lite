@@ -231,7 +231,7 @@ object LlmEndpointCatalog {
             displayName = "NVIDIA",
             baseUrl = "https://integrate.api.nvidia.com/v1",
             chatCompletionsPath = "/chat/completions",
-            modelsUrl = "https://api.nvidia.com/v1/models",
+            modelsUrl = "https://integrate.api.nvidia.com/v1/models",
             authScheme = AuthScheme.BEARER,
             modelListStyle = ModelListStyle.OPENAI_DATA,
             visionInference = VisionInference.GENERIC,
