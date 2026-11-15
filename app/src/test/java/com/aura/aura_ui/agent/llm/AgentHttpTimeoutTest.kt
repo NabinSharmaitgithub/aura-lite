@@ -91,9 +91,14 @@ class AgentHttpTimeoutTest {
         thread(isDaemon = true) {
             runCatching {
                 val socket = server.accept()
-                socket.getInputStream().readBytes() // consume request
+                socket.soTimeout = 2000
+                val input = socket.getInputStream()
+                val buf = ByteArray(4096)
+                // Best-effort consume request headers/body so client can proceed.
+                runCatching { input.read(buf) }
                 val body = """{"ok":true}"""
-                val response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n$body"
+                val response =
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n$body"
                 socket.getOutputStream().write(response.toByteArray())
                 socket.getOutputStream().flush()
                 socket.close()

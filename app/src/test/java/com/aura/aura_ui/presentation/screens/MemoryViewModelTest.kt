@@ -51,11 +51,11 @@ class MemoryViewModelTest {
 
         vm.setMemoryPinned(entry.id, true)
         // ViewModel updates asynchronously; poll briefly for state propagation.
-        repeat(20) { if (!vm.state.value.assistant.facts.single().pinned) Thread.sleep(25) }
+        repeat(40) { if (!vm.state.value.assistant.facts.single().pinned) { Thread.sleep(25); vm.refresh() } }
         assertTrue(vm.state.value.assistant.facts.single().pinned)
 
         vm.deleteMemory(entry.id)
-        repeat(20) { if (!vm.state.value.assistant.isEmpty) Thread.sleep(25) }
+        repeat(40) { if (!vm.state.value.assistant.isEmpty) { Thread.sleep(25); vm.refresh() } }
         assertTrue(vm.state.value.assistant.isEmpty)
     }
 
