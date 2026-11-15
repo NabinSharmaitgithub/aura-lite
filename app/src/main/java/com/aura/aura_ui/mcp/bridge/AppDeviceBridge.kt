@@ -1,4 +1,4 @@
-package com.aura.aura_ui.mcp.bridge
+﻿package com.aura.aura_ui.mcp.bridge
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -94,7 +94,7 @@ class AppDeviceBridge(
             screenHeightPx = h,
             androidApiLevel = Build.VERSION.SDK_INT,
             deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
-            foregroundPackage = foregroundPackage(),
+            foregroundPackage = service?.rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotBlank() },
             foregroundActivity = null,
         )
     }

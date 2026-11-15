@@ -1,4 +1,4 @@
-package com.aura.aura_ui.agent.memory
+﻿package com.aura.aura_ui.agent.memory
 
 import android.annotation.SuppressLint
 import android.app.AlarmManager
@@ -26,44 +26,6 @@ import kotlinx.coroutines.launch
  * Exact when the user granted "Alarms & reminders"; otherwise an inexact allow-while-idle alarm,
  * which Doze may hold for some minutes — late, but it still rings.
  */
-object ReminderScheduler {
-    private const val TAG = "ReminderScheduler"
-    const val EXTRA_ID = "commitment_id"
-
-    /** A reminder already overdue (e.g. the phone was off) fires shortly, rather than never. */
-    const val OVERDUE_GRACE_MS = 2_000L
-
-    fun triggerAt(dueAtEpochMs: Long, nowEpochMs: Long): Long =
-        if (dueAtEpochMs > nowEpochMs) dueAtEpochMs else nowEpochMs + OVERDUE_GRACE_MS
-
-    fun schedule(context: Context, c: Commitment) {
-        if (c.done) return
-        val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        val at = triggerAt(c.dueAtEpochMs, System.currentTimeMillis())
-        val pi = PendingIntent.getBroadcast(
-            context,
-            c.id.hashCode(),
-            Intent(context, ReminderReceiver::class.java).putExtra(EXTRA_ID, c.id),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
-        runCatching {
-            if (exact) {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
-            } else {
-                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
-            }
-        }.onFailure { Log.w(TAG, "could not arm reminder ${c.id}: ${it.message}") }
-    }
-
-    /** Alarms do not survive a reboot; [com.aura.aura_ui.receivers.BootReceiver] calls this. */
-    fun rescheduleAll(context: Context) {
-        runCatching { memoryService(context).pendingCommitments().forEach { schedule(context, it) } }
-            .onFailure { Log.w(TAG, "re-arm after boot failed: ${it.message}") }
-    }
-}
-
-/** Posts the reminder, then marks it delivered: one-shots are done, daily routines re-arm for tomorrow. */
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val id = intent.getStringExtra(ReminderScheduler.EXTRA_ID) ?: return

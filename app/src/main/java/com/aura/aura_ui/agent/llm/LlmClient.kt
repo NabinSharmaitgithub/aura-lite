@@ -1,4 +1,4 @@
-package com.aura.aura_ui.agent.llm
+﻿package com.aura.aura_ui.agent.llm
 
 import java.io.IOException
 import javax.inject.Inject
@@ -7,8 +7,12 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import okhttp3.Call
 import okhttp3.Callback
@@ -212,3 +216,8 @@ class LlmClient @Inject constructor(private val http: OkHttpClient) {
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
     }
 }
+
+private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+private fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.intOrNull
+private fun JsonObject.array(key: String): JsonArray? = this[key] as? JsonArray
+private fun JsonArray.objects(): List<JsonObject> = mapNotNull { it as? JsonObject }

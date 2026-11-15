@@ -1,4 +1,4 @@
-package com.aura.aura_ui.agent.llm
+﻿package com.aura.aura_ui.agent.llm
 
 import kotlinx.serialization.Serializable
 
@@ -34,7 +34,7 @@ enum class ModelListStyle { OPENAI_DATA, GEMINI_MODELS }
 
 /** How [ModelCatalog] decides a model can read screenshots (providers report modality inconsistently). */
 @Serializable
-enum class VisionInference { LLAMA4_FAMILY, OPENROUTER_MODALITY, GEMINI_GENERATION, OPENAI_FAMILY, ALL_MODELS, GENERIC }
+enum class VisionInference { LLAMA4_FAMILY, OPENROUTER_MODALITY, GEMINI_GENERATION, OPENAI_FAMILY, ALL_MODELS, GENERIC, NEVER }
 
 /**
  * How [ModelCatalog] decides a model can *think* (reason), and how the thinking control is gated
@@ -87,6 +87,6 @@ data class LlmEndpoint(
      */
     val defaultModelId: String = "",
 ) {
-    val chatUrl: String get() = if (baseUrl.endsWith("/")) "" else ""
+    val chatUrl: String get() = baseUrl.trimEnd('/') + "/" + chatCompletionsPath.trimStart('/')
     val modelsEndpoint: String get() = modelsUrl
 }

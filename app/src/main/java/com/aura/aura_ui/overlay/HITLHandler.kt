@@ -1,4 +1,4 @@
-package com.aura.aura_ui.overlay
+﻿package com.aura.aura_ui.overlay
 
 import android.util.Log
 import org.json.JSONObject
@@ -97,6 +97,16 @@ object HITLHandler {
     /**
      * Send HITL response back through WebSocket.
      */
+    private fun sendResponse(response: JSONObject) {
+        val map = mutableMapOf<String, Any>()
+        val keys = response.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            map[key] = response.get(key)
+        }
+        sendResponse(map)
+    }
+
     private fun sendResponse(response: Map<String, Any>) {
         val jsonResponse = JSONObject().apply {
             put("type", "hitl_response")

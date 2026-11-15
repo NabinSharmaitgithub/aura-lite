@@ -1,4 +1,4 @@
-package com.aura.aura_ui.agent.llm
+﻿package com.aura.aura_ui.agent.llm
 
 import java.io.IOException
 import javax.inject.Inject
@@ -14,11 +14,12 @@ import okhttp3.Request
 @Singleton
 class ModelCatalog @Inject constructor(private val http: OkHttpClient) {
 
+    class ModelFetchError(val userMessage: String, cause: Throwable? = null) : Exception(userMessage, cause)
+
     suspend fun fetch(endpoint: LlmEndpoint, key: String): Result<List<ModelInfo>> =
         Companion.fetch(endpoint, key, http)
 
     companion object {
-        class ModelFetchError(val userMessage: String, cause: Throwable? = null) : Exception(userMessage, cause)
 
         fun reasoningCapableForWire(endpoint: LlmEndpoint, modelId: String): Boolean = true
 

@@ -1,4 +1,4 @@
-package com.aura.aura_ui.overlay
+﻿package com.aura.aura_ui.overlay
 
 import android.app.Service
 import android.content.Context
@@ -456,8 +456,6 @@ class AuraOverlayService : Service() {
 
         @Volatile
         private var instance: AuraOverlayService? = null
-        fun getInstance(): AuraOverlayService? = instance
-
         fun getInstance(): AuraOverlayService? = instance
 
         fun start(context: Context) {

@@ -1,4 +1,4 @@
-package com.aura.aura_ui.accessibility
+﻿package com.aura.aura_ui.accessibility
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
@@ -56,20 +56,24 @@ class AuraAccessibilityService : AccessibilityService() {
         val error: String? = null,
     )
 
-    val screenCaptureManager = object {
+    class ScreenCaptureManagerHelper(private val service: AuraAccessibilityService) {
         fun captureScreenWithAnalysis(force: Boolean = true, callback: (ScreenCaptureData) -> Unit) {
-            val shot = captureScreen()
+            val shot = service.captureScreen()
             if (shot != null) {
-                callback(ScreenCaptureData(screenshot = shot, screenWidth = getScreenWidth(), screenHeight = getScreenHeight()))
+                callback(ScreenCaptureData(screenshot = shot, screenWidth = service.getScreenWidth(), screenHeight = service.getScreenHeight()))
             } else {
                 callback(ScreenCaptureData(error = "Screen capture unavailable"))
             }
         }
     }
 
-    val uiTreeExtractor = object {
+    class UiTreeExtractorHelper {
         fun getUITree(): Map<String, Any>? = emptyMap()
     }
+
+    val screenCaptureManager = ScreenCaptureManagerHelper(this)
+    val uiTreeExtractor = UiTreeExtractorHelper()
+    val gestures: GestureInjector by lazy { GestureInjector(this, extractor) }
 
     suspend fun tapAwait(x: Int, y: Int): Boolean = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
         val path = android.graphics.Path().apply { moveTo(x.toFloat(), y.toFloat()) }
@@ -162,10 +166,8 @@ class AuraAccessibilityService : AccessibilityService() {
     fun getUITree(): Map<String, Any>? = emptyMap()
     fun captureScreen(): String? = kotlinx.coroutines.runBlocking {
         val shot = captureScreenshot()
-        if (shot is AccessibilityShot.Success) {
-            val s = java.io.ByteArrayOutputStream()
-            shot.bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, s)
-            android.util.Base64.encodeToString(s.toByteArray(), android.util.Base64.NO_WRAP)
+        if (shot is AccessibilityShot.Ok) {
+            shot.base64Jpeg
         } else null
     }
     fun updateLiveNotification(stage: String, status: String) = Unit
@@ -442,6 +444,10 @@ class AuraAccessibilityService : AccessibilityService() {
         @Volatile
         var instance: AuraAccessibilityService? = null
             private set
+
+        val screenCaptureAvailable = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+        val screenCaptureAvailable = kotlinx.coroutines.flow.MutableStateFlow(false)
 
         @Volatile
         var pendingMediaProjectionResultCode: Int? = null

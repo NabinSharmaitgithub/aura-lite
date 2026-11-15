@@ -1,4 +1,4 @@
-package com.aura.aura_ui.agent.ledger
+﻿package com.aura.aura_ui.agent.ledger
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -26,7 +26,7 @@ enum class PlanStepStatus(val wire: String) {
 @Serializable
 data class PlanStep(
     val text: String = "",
-    val status: String = "pending",
+    val status: PlanStepStatus = PlanStepStatus.PENDING,
     val evidence: String? = null,
     val failReason: String? = null,
     val attempts: Int = 0,
@@ -34,11 +34,14 @@ data class PlanStep(
     val description: String = text,
     val note: String? = null,
 ) {
-    val settled: Boolean get() = typedStatus == PlanStepStatus.DONE || typedStatus == PlanStepStatus.FAILED || typedStatus == PlanStepStatus.SKIPPED
-    val typedStatus: PlanStepStatus get() = PlanStepStatus.fromWire(status)
+    val settled: Boolean get() = status == PlanStepStatus.DONE || status == PlanStepStatus.FAILED || status == PlanStepStatus.SKIPPED
+    val typedStatus: PlanStepStatus get() = status
 
-    constructor(id: String, description: String, status: PlanStepStatus, note: String? = null) :
-        this(text = description, status = status.wire, id = id, description = description, note = note)
+    constructor(id: String, description: String, status: PlanStepStatus = PlanStepStatus.PENDING, note: String? = null) :
+        this(text = description, status = status, id = id, description = description, note = note)
+
+    constructor(id: String, description: String, status: String, note: String? = null) :
+        this(text = description, status = PlanStepStatus.fromWire(status), id = id, description = description, note = note)
 }
 
 @Serializable
@@ -70,7 +73,7 @@ data class RunOutcome(
     val verdict: String = UNVERIFIED,
     val why: String? = null,
     val enforced: Boolean = false,
-    val proven: Int = 0,
+    val proven: Int? = null,
     val target: Int? = null,
 ) {
     companion object {
@@ -131,15 +134,15 @@ data class RunLedger(
     val modelId: String = "",
     val startedAtMs: Long = System.currentTimeMillis(),
     val planVersion: Int = 0,
-    val planSteps: MutableList<PlanStep> = mutableListOf(),
+    val planSteps: List<PlanStep> = emptyList(),
     val settledSteps: Int = 0,
     val progressAtCall: Int = 0,
     val toolCalls: Int = 0,
     val stalledCalls: Int? = null,
     val surprise: String? = null,
     val surpriseAtCall: Int = 0,
-    val facts: MutableList<String> = mutableListOf(),
-    val deadEnds: MutableList<String> = mutableListOf(),
+    val facts: List<String> = emptyList(),
+    val deadEnds: List<String> = emptyList(),
     val recentSteps: List<StepRecord> = emptyList(),
     val totalSteps: Int = 0,
     val failedSteps: Int = 0,
@@ -167,28 +170,15 @@ data class RunLedger(
 
     fun finish(outcome: Any? = null, finalAnswer: String? = null) = Unit
 
-    fun addFact(key: String, value: String, source: String? = null) {
-        facts.add(key + ": " + value)
-    }
+    fun addFact(key: String, value: String, source: String? = null) = Unit
 
-    fun addDeadEnd(note: String) {
-        deadEnds.add(note)
-    }
+    fun addDeadEnd(note: String) = Unit
 
-    fun setPlan(stepDescriptions: List<String>) {
-        planSteps.clear()
-        stepDescriptions.forEachIndexed { idx, desc ->
-            planSteps.add(PlanStep(id = "step_" + (idx + 1), description = desc, status = PlanStepStatus.PENDING))
-        }
-    }
+    fun setPlan(stepDescriptions: List<String>) = Unit
 
-    fun updateStep(id: String, status: PlanStepStatus, note: String? = null) {
-        val idx = planSteps.indexOfFirst { it.id == id }
-        if (idx >= 0) {
-            val old = planSteps[idx]
-            planSteps[idx] = old.copy(status = status.wire, note = note)
-        }
-    }
+    fun updateStep(id: String, status: PlanStepStatus, note: String? = null) = Unit
+
+    fun updateStep(id: String, status: String, note: String? = null) = Unit
 
     fun revision(): Long = (planVersion + totalSteps + facts.size + deadEnds.size).toLong()
 
