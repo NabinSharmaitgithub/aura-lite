@@ -24,6 +24,8 @@ object ToolVerbs {
         "clipboard" -> "Copying"
         "press_key" -> "Navigating"
         "press_enter" -> "Submitting"
+        "lock_device" -> "Locking"
+        "unlock_device" -> "Unlocking"
         "perceive_screen", "get_screenshot", "read_screen" -> "Seeing"
         "verify_action", "wait_for" -> "Checking"
         "web_search" -> "Searching"

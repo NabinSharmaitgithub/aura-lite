@@ -111,10 +111,8 @@ class ScreenCaptureManager @Inject constructor(@ApplicationContext private val c
         }
 
         _state.value = CaptureState.Capturing
-        val metrics = context.resources.displayMetrics
-        val width = metrics.widthPixels
-        val height = metrics.heightPixels
-        val density = metrics.densityDpi
+        val (width, height) = ScreenGeometry.realSizePx(context)
+        val density = ScreenGeometry.densityDpi(context)
         val thread = HandlerThread("aura-capture").apply { start() }
         val handler = Handler(thread.looper)
         val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)

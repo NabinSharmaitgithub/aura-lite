@@ -12,6 +12,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import androidx.core.app.ServiceCompat
+import com.aura.aura_ui.accessibility.ScreenGeometry
 import com.aura.aura_ui.agent.AgentRuntime
 import com.aura.aura_ui.agent.hitl.AskUserBroker
 import com.aura.aura_ui.agent.ledger.PlanStepStatus
@@ -152,6 +153,7 @@ class AuraOverlayService : Service() {
             pill.setTaskData(currentGoal, runtime.isRunning)
         }
 
+        val (screenW, screenH) = ScreenGeometry.realSizePx(this)
         val density = resources.displayMetrics.density
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
