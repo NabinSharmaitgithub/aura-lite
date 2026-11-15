@@ -12,7 +12,7 @@ class ModelCatalogTest {
     fun `authHeaders returns bearer header for bearer endpoints`() {
         val groq = LlmEndpointCatalog.builtinById(LlmEndpointCatalog.GROQ_ID)!!
         val headers = groq.authHeaders("test-key")
-        assertEquals("Bearer ", headers["Authorization"])
+        assertEquals("Bearer test-key", headers["Authorization"])
     }
 
     @Test
