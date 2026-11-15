@@ -11,7 +11,7 @@ import org.junit.Test
  * "delete this photo" is a broken product, and a broken product gets switched off — at which
  * point it protects nothing. So the false-positive cases carry the same weight as the block.
  */
-class DestructiveGoalTest {
+class BulkDestructionGoalTest {
 
     private fun blocked(goal: String) =
         assertTrue("should refuse: $goal", DestructiveGoal.isBulkDestruction(goal))

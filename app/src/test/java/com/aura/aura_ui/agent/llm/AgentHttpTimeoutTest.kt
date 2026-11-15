@@ -5,9 +5,9 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.runBlocking
-import mockwebserver3.MockResponse
-import mockwebserver3.MockWebServer
-import mockwebserver3.SocketEffect
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -49,7 +49,7 @@ class AgentHttpTimeoutTest {
     fun `a request that never gets a response fails instead of hanging`() {
         val server = MockWebServer()
         // Accept the connection, then never answer — a half-open socket.
-        server.enqueue(MockResponse.Builder().onResponseStart(SocketEffect.Stall).build())
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
         server.start()
 
         try {
@@ -87,11 +87,10 @@ class AgentHttpTimeoutTest {
     fun `a healthy response is not disturbed by the timeouts`() {
         val server = MockWebServer()
         server.enqueue(
-            MockResponse.Builder()
-                .code(200)
+            MockResponse()
+                .setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .body("""{"ok":true}""")
-                .build(),
+                .setBody("""{"ok":true}"""),
         )
         server.start()
 
