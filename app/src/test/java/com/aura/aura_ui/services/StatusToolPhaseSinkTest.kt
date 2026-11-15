@@ -4,6 +4,9 @@ import com.aura.mcp.bridge.McpScope
 import com.aura.mcp.bridge.ToolPhaseSink
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The status chip must always find its way back to Idle.
@@ -19,6 +22,8 @@ import org.junit.Test
  * process. Tool-level errors are not a status; the agent retries. Only the
  * *run* layer knows about terminal failure.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class StatusToolPhaseSinkTest {
 
     private val controller = StatusController()

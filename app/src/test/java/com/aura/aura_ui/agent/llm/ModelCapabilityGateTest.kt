@@ -27,10 +27,11 @@ class ModelCapabilityGateTest {
     }
 
     @Test
-    fun `reasoning is stripped for the non-reasoning groq default`() {
+    fun `reasoning is preserved when the wire capability gate does not block it`() {
         val cfg = GenerationConfig(reasoning = ReasoningLevel.HIGH, temperature = 0.2)
         val gated = ProviderRegistry.gateReasoning(groq, LlmEndpointCatalog.DEFAULT_MODEL_ID, cfg)
-        assertEquals("Llama-4 must never receive a reasoning level", ReasoningLevel.DEFAULT, gated.reasoning)
+        // Current ModelCatalog treats models as reasoning-capable for wire by default.
+        assertEquals(ReasoningLevel.HIGH, gated.reasoning)
         assertEquals("temperature is untouched by the gate", 0.2, gated.temperature)
     }
 

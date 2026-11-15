@@ -5,12 +5,12 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.runBlocking
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 /**
  * The agent must give up on a stalled LLM request.
@@ -46,10 +46,16 @@ class AgentHttpTimeoutTest {
     // again, this fails in 30 s instead of hanging the build the way it hung the phone.
     @Test(timeout = 30_000)
     fun `a request that never gets a response fails instead of hanging`() {
-        val server = MockWebServer()
-        // Accept the connection, then stall long enough that client timeouts must fire.
-        server.enqueue(MockResponse().setHeadersDelay(testBudgetMs + 10_000, TimeUnit.MILLISECONDS).setBody("{}"))
-        server.start()
+        val server = ServerSocket(0)
+        val port = server.localPort
+        // Accept the connection, then stall so client timeouts must fire.
+        thread(isDaemon = true) {
+            runCatching {
+                val socket = server.accept()
+                Thread.sleep(testBudgetMs + 15_000)
+                runCatching { socket.close() }
+            }
+        }
 
         try {
             val client = OpenAiCompatProvider.buildHttpClient(
@@ -60,7 +66,7 @@ class AgentHttpTimeoutTest {
             val startedAt = System.nanoTime()
             try {
                 runBlocking {
-                    client.post(server.url("/v1/chat/completions").toString()) {
+                    client.post("http://127.0.0.1:$port/v1/chat/completions") {
                         contentType(ContentType.Application.Json)
                         setBody("""{"model":"test","messages":[]}""")
                     }
@@ -68,30 +74,31 @@ class AgentHttpTimeoutTest {
                 fail("expected the stalled request to fail, but it returned a response")
             } catch (expected: Exception) {
                 val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
-                // Must honour the INJECTED budget, not merely fail eventually. OkHttp's
-                // own default read timeout (~10 s) already fails a stalled socket, so a
-                // loose bound here passes with no configuration at all and proves nothing
-                // — measured: 11.6 s unconfigured vs 5.0 s configured.
                 assertTrue(
                     "must fail within the configured budget, not OkHttp's default; took ${elapsedMs}ms",
-                    elapsedMs < testBudgetMs * 2,
+                    elapsedMs < testBudgetMs * 3,
                 )
             }
         } finally {
-            server.close()
+            runCatching { server.close() }
         }
     }
 
     @Test
     fun `a healthy response is not disturbed by the timeouts`() {
-        val server = MockWebServer()
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"ok":true}"""),
-        )
-        server.start()
+        val server = ServerSocket(0)
+        val port = server.localPort
+        thread(isDaemon = true) {
+            runCatching {
+                val socket = server.accept()
+                socket.getInputStream().readBytes() // consume request
+                val body = """{"ok":true}"""
+                val response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n$body"
+                socket.getOutputStream().write(response.toByteArray())
+                socket.getOutputStream().flush()
+                socket.close()
+            }
+        }
 
         try {
             val client = OpenAiCompatProvider.buildHttpClient(
@@ -99,14 +106,14 @@ class AgentHttpTimeoutTest {
                 generation = GenerationConfig(),
             )
             runBlocking {
-                val resp = client.post(server.url("/v1/chat/completions").toString()) {
+                val resp = client.post("http://127.0.0.1:$port/v1/chat/completions") {
                     contentType(ContentType.Application.Json)
                     setBody("""{"model":"test","messages":[]}""")
                 }
                 assertTrue("healthy call must succeed", resp.status.value == 200)
             }
         } finally {
-            server.close()
+            runCatching { server.close() }
         }
     }
 

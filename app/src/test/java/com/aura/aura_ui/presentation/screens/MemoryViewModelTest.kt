@@ -50,9 +50,12 @@ class MemoryViewModelTest {
         val vm = MemoryViewModel(ctx)
 
         vm.setMemoryPinned(entry.id, true)
+        // ViewModel updates asynchronously; poll briefly for state propagation.
+        repeat(20) { if (!vm.state.value.assistant.facts.single().pinned) Thread.sleep(25) }
         assertTrue(vm.state.value.assistant.facts.single().pinned)
 
         vm.deleteMemory(entry.id)
+        repeat(20) { if (!vm.state.value.assistant.isEmpty) Thread.sleep(25) }
         assertTrue(vm.state.value.assistant.isEmpty)
     }
 
