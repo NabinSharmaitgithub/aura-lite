@@ -26,7 +26,7 @@ class LlmEndpointCatalogTest {
         assertEquals(
             listOf(
                 "groq", "openrouter", "gemini", "openai", "anthropic",
-                "mistral", "dashscope", "cerebras", "zai", "xai", "together", "moonshot", "deepseek",
+                "mistral", "dashscope", "cerebras", "zai", "xai", "together", "moonshot", "deepseek", "nvidia",
             ),
             LlmEndpointCatalog.BUILTINS.map { it.id },
         )
@@ -54,7 +54,7 @@ class LlmEndpointCatalogTest {
      */
     @Test
     fun `the new presets declare no wire shims`() {
-        val added = setOf("mistral", "dashscope", "cerebras", "zai", "xai", "together", "moonshot", "deepseek")
+        val added = setOf("mistral", "dashscope", "cerebras", "zai", "xai", "together", "moonshot", "deepseek", "nvidia")
         LlmEndpointCatalog.BUILTINS.filter { it.id in added }.forEach { e ->
             assertEquals("${e.id} should be plain OpenAI wire", ProviderProfile(), e.profile)
             assertEquals("${e.id} lists models in the OpenAI shape", ModelListStyle.OPENAI_DATA, e.modelListStyle)
@@ -70,7 +70,7 @@ class LlmEndpointCatalogTest {
      */
     @Test
     fun `presets added without a verified default model leave it blank`() {
-        val added = setOf("mistral", "dashscope", "cerebras", "zai", "xai", "together", "moonshot", "deepseek")
+        val added = setOf("mistral", "dashscope", "cerebras", "zai", "xai", "together", "moonshot", "deepseek", "nvidia")
         LlmEndpointCatalog.BUILTINS.filter { it.id in added }.forEach {
             assertEquals("${it.id} must not guess a default model", "", it.defaultModelId)
         }
