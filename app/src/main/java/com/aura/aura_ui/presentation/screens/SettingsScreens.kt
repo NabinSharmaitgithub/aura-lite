@@ -6,6 +6,8 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.runtime.rememberCoroutineScope
@@ -891,6 +893,7 @@ fun FirebaseScreen(vm: AuraViewModel) {
                         GhostButton(
                             "Continue with Google",
                             {
+                                if (busy) return@GhostButton
                                 val act = activity ?: run {
                                     vm.showNotice("Google sign-in requires an Activity context")
                                     return@GhostButton
@@ -911,7 +914,6 @@ fun FirebaseScreen(vm: AuraViewModel) {
                                     }
                                 }
                             },
-                            enabled = !busy,
                         )
                     }
                 }
