@@ -103,7 +103,7 @@ object EvalTaskCatalog {
      * because a number from an under-covered category reads exactly like a real one.
      */
     fun coverageGaps(tasks: List<EvalTask>): List<String> {
-        val counts = tasks.groupingBy { it.category }.eachCount()
+        val counts = tasks.groupBy { it.category }.mapValues { (_, v) -> v.size }
         return EvalCategory.entries.mapNotNull { cat ->
             val have = counts[cat.id] ?: 0
             if (have >= cat.floor) null else "${cat.label}: $have of ${cat.floor}"
