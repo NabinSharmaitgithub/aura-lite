@@ -340,7 +340,7 @@ jobs:
           retention-days: 30
 
       - name: Publish GitHub release
-        if: ${{ success() && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref_name == 'main') || (github.event_name == 'push' && github.ref_name == 'master') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release == 'true')) }}
+        if: ${{ success() && github.event_name != 'pull_request' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', steps.version.outputs.name) }}
