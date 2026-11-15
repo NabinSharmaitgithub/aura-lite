@@ -535,19 +535,8 @@ class AuraOverlayService : Service() {
             isComplete: Boolean = false,
             isAborted: Boolean = false,
         ) {
-            val status = if (isComplete) "Completed" else if (isAborted) "Stopped" else " of "
-            instance?.view?.updateLiveCaption(" ()")
-        }
-
-        fun updateLiveNotificationProgress(
-            goal: String,
-            current: Int,
-            total: Int,
-            isComplete: Boolean = false,
-            isAborted: Boolean = false,
-        ) {
-            val status = if (isComplete) "Completed" else if (isAborted) "Stopped" else " of "
-            instance?.view?.updateLiveCaption(" ()")
+            val status = if (isComplete) "Completed" else if (isAborted) "Stopped" else "$current of $total"
+            instance?.view?.updateLiveCaption("$goal ($status)")
         }
 
         fun endVoiceConversation() {

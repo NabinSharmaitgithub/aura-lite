@@ -1,4 +1,4 @@
-package com.aura.aura_ui.presentation.components
+﻿package com.aura.aura_ui.presentation.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -227,8 +227,8 @@ fun RunTodoList(
     val steps = state.planSteps
     if (steps.isEmpty()) return
     var expanded by remember { mutableStateOf(true) }
-    val doneCount = steps.count { it.status == "done" || it.typedStatus == PlanStepStatus.DONE }
-    val activeStep = steps.firstOrNull { it.status == "in_progress" || it.typedStatus == PlanStepStatus.IN_PROGRESS }
+    val doneCount = steps.count { it.typedStatus == PlanStepStatus.DONE }
+    val activeStep = steps.firstOrNull { it.typedStatus == PlanStepStatus.IN_PROGRESS }
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
