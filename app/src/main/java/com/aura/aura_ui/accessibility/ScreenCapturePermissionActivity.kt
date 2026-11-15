@@ -6,6 +6,7 @@ import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.util.Log
+import com.aura.aura_ui.services.MediaProjectionService
 
 /**
  * Transparent, no-UI Activity that triggers the system MediaProjection consent dialog.
@@ -56,17 +57,22 @@ class ScreenCapturePermissionActivity : Activity() {
 
         runCatching {
             if (granted && data != null) {
+                val projectionData = Intent(data)
+                // Required for Android 14+ before creating/using MediaProjection captures.
+                MediaProjectionService.start(this)
                 val service = AuraAccessibilityService.instance
                 if (service != null) {
-                    service.initializeMediaProjection(resultCode, data)
+                    service.initializeMediaProjection(resultCode, projectionData)
                 } else {
                     AuraAccessibilityService.pendingMediaProjectionResultCode = resultCode
-                    AuraAccessibilityService.pendingMediaProjectionData = data
+                    AuraAccessibilityService.pendingMediaProjectionData = projectionData
                     Log.w(TAG, "AuraAccessibilityService not running yet — stashed pending token")
                 }
+                ScreenCaptureManager.onExternalConsentGranted(applicationContext, resultCode, projectionData)
+            } else {
+                ScreenCaptureManager.onExternalConsentDenied()
             }
 
-            // Notify backend of the result regardless
             AuraAccessibilityService.sendScreenCapturePermissionResult(
                 granted = granted,
                 error = if (granted) null else "User denied MediaProjection permission",

@@ -118,6 +118,11 @@ android {
         applicationId = "com.aura.aura_ui.feature"
         minSdk = 26
         targetSdk = 36
+
+        buildConfigField("String", "B2_DEFAULT_KEY_ID", "\"${localProperty("b2.keyId")}\"")
+        buildConfigField("String", "B2_DEFAULT_APP_KEY", "\"${localProperty("b2.applicationKey")}\"")
+        buildConfigField("String", "B2_DEFAULT_BUCKET", "\"${localProperty("b2.bucket")}\"")
+        buildConfigField("String", "B2_DEFAULT_ENDPOINT", "\"${localProperty("b2.endpoint")}\"")
         versionCode = computedVersionCode
         versionName = "1.0.$computedVersionCode"
 

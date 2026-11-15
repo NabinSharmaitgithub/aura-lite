@@ -2,6 +2,7 @@ package com.aura.aura_ui.b2
 
 import android.content.Context
 import com.aura.aura_ui.data.prefs.AuraSettings
+import com.aura.aura_ui.data.prefs.SecureKeyStore
 import com.aura.aura_ui.state.BackupState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -25,6 +26,7 @@ import java.util.zip.ZipOutputStream
 class B2Service @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settings: AuraSettings,
+    private val keys: SecureKeyStore,
     private val client: B2Client,
 ) {
     private val _backupState = MutableStateFlow(BackupState.IDLE)
@@ -33,9 +35,21 @@ class B2Service @Inject constructor(
 
     fun isConfigured(): Boolean = client.config() != null
 
-    fun configuredHint(): String =
-        if (isConfigured()) "Bucket ${settings.b2BucketName} · ${settings.b2Endpoint}"
-        else "Not configured"
+    fun effectiveConfig(): B2Client.Config? = client.config()
+
+    fun configuredHint(): String {
+        val cfg = effectiveConfig() ?: return "Not configured"
+        return "Bucket ${cfg.bucket} · ${cfg.endpoint}"
+    }
+
+    fun isUsingDefaults(): Boolean {
+        val cfg = effectiveConfig() ?: return false
+        val bucketDefault = settings.b2BucketName.isBlank() && com.aura.aura_ui.BuildConfig.B2_DEFAULT_BUCKET.isNotBlank()
+        val endpointDefault = settings.b2Endpoint.isBlank() && com.aura.aura_ui.BuildConfig.B2_DEFAULT_ENDPOINT.isNotBlank()
+        val keyDefault = (keys.b2KeyId == null && com.aura.aura_ui.BuildConfig.B2_DEFAULT_KEY_ID.isNotBlank()) ||
+            (keys.b2ApplicationKey == null && com.aura.aura_ui.BuildConfig.B2_DEFAULT_APP_KEY.isNotBlank())
+        return bucketDefault || endpointDefault || keyDefault
+    }
 
     suspend fun testConnection(): Result<String> = client.ping()
 

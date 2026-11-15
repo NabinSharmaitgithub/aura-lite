@@ -38,6 +38,31 @@ import kotlin.coroutines.resume
 @Singleton
 class ScreenCaptureManager @Inject constructor(@ApplicationContext private val context: Context) {
 
+    companion object {
+        @Volatile private var pendingResultCode: Int? = null
+        @Volatile private var pendingResultData: Intent? = null
+
+        fun onExternalConsentGranted(appContext: Context, resultCode: Int, data: Intent) {
+            pendingResultCode = resultCode
+            pendingResultData = Intent(data)
+            // Best-effort: if a Hilt instance isn't reachable, VM/UI paths can still consume via pending stash
+            // by creating projection later through AccessibilityService-stashed token fallback.
+        }
+
+        fun onExternalConsentDenied() {
+            pendingResultCode = null
+            pendingResultData = null
+        }
+    }
+
+    private fun consumePendingExternalConsent() {
+        val code = pendingResultCode ?: return
+        val data = pendingResultData ?: return
+        pendingResultCode = null
+        pendingResultData = null
+        handleConsentResult(code, data)
+    }
+
     private val projectionManager =
         context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     private var projection: MediaProjection? = null
@@ -87,9 +112,13 @@ class ScreenCaptureManager @Inject constructor(@ApplicationContext private val c
         _consentRequested.value = 0
     }
 
-    fun hasConsent(): Boolean = _state.value.hasConsent || AuraAccessibilityService.isConnected()
+    fun hasConsent(): Boolean {
+        consumePendingExternalConsent()
+        return _state.value.hasConsent || AuraAccessibilityService.isConnected()
+    }
 
     suspend fun captureToFile(maxDimension: Int = 1080): Result<File> = mutex.withLock {
+        consumePendingExternalConsent()
         val active = projection
         if (active == null) {
             // Fallback to accessibility screenshot source

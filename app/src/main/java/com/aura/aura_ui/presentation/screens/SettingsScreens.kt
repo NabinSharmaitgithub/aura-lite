@@ -2,17 +2,15 @@ package com.aura.aura_ui.presentation.screens
 
 import android.Manifest
 import android.app.Activity
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import androidx.compose.material.icons.outlined.Cloud
-import androidx.compose.material.icons.outlined.CloudUpload
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Build
 import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -799,37 +797,14 @@ fun FirebaseScreen(vm: AuraViewModel) {
     var fieldEmail by remember(email) { mutableStateOf(email ?: "") }
     var password by remember { mutableStateOf("") }
 
-    // Google sign-in is offered only when this build carries google-services.json, which
-    // generates the default_web_client_id string. Otherwise the button stays hidden and
-    // email/password still works.
     val activity = context as? Activity
-    val googleClient = remember(activity) {
-        val webClientId = runCatching {
+    val scope = rememberCoroutineScope()
+    val signIn = remember(context) { com.aura.aura_ui.remote.AuraSignIn(context) }
+    val canGoogleSignIn = remember(activity) {
+        activity != null && runCatching {
             val id = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
-            if (id != 0) context.getString(id) else null
-        }.getOrNull()
-        val act = activity
-        if (act != null && webClientId != null) {
-            GoogleSignIn.getClient(
-                act,
-                GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                    .requestIdToken(webClientId)
-                    .requestEmail()
-                    .build(),
-            )
-        } else {
-            null
-        }
-    }
-    val googleLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-        task.addOnSuccessListener { account ->
-            val idToken = account?.idToken
-            if (idToken != null) vm.firebaseSignInWithGoogle(idToken) else vm.showNotice("Google sign-in returned no token")
-        }
-        task.addOnFailureListener { vm.showNotice("Google sign-in cancelled or failed") }
+            id != 0 && context.getString(id).isNotBlank()
+        }.getOrDefault(false)
     }
 
     LazyColumn(
@@ -911,9 +886,33 @@ fun FirebaseScreen(vm: AuraViewModel) {
                             enabled = fieldEmail.isNotBlank() && password.isNotBlank() && !busy,
                         )
                     }
-                    googleClient?.let { client ->
+                    if (canGoogleSignIn) {
                         Spacer(Modifier.height(10.dp))
-                        GhostButton("Continue with Google", { googleLauncher.launch(client.signInIntent) })
+                        GhostButton(
+                            "Continue with Google",
+                            {
+                                val act = activity ?: run {
+                                    vm.showNotice("Google sign-in requires an Activity context")
+                                    return@GhostButton
+                                }
+                                scope.launch {
+                                    when (val outcome = signIn.signIn(act)) {
+                                        is com.aura.aura_ui.remote.SignInOutcome.Success -> {
+                                            vm.refreshFirebaseState()
+                                            vm.showNotice("Linked ${outcome.email ?: "Google account"}. Sync is ready.")
+                                        }
+                                        com.aura.aura_ui.remote.SignInOutcome.Cancelled -> Unit
+                                        com.aura.aura_ui.remote.SignInOutcome.NoGoogleAccount ->
+                                            vm.showNotice("No Google account found on this device. Add one in Android Settings and try again.")
+                                        is com.aura.aura_ui.remote.SignInOutcome.Misconfigured ->
+                                            vm.showNotice(outcome.message)
+                                        is com.aura.aura_ui.remote.SignInOutcome.Failed ->
+                                            vm.showNotice("Google sign-in failed: ${outcome.message}")
+                                    }
+                                }
+                            },
+                            enabled = !busy,
+                        )
                     }
                 }
                 if (message.isNotBlank()) {
@@ -1016,11 +1015,14 @@ fun B2Screen(vm: AuraViewModel) {
                 }
                 if (vm.b2Configured) {
                     Spacer(Modifier.height(4.dp))
-                    Text("Bucket ${settings.b2BucketName}", style = MonoStyleSmall, color = mono.textSecondary)
-                    Text("Endpoint ${settings.b2Endpoint}", style = MonoStyleSmall, color = mono.textSecondary)
+                    Text("Bucket ${vm.b2EffectiveBucket ?: settings.b2BucketName}", style = MonoStyleSmall, color = mono.textSecondary)
+                    Text("Endpoint ${vm.b2EffectiveEndpoint ?: settings.b2Endpoint}", style = MonoStyleSmall, color = mono.textSecondary)
+                    if (vm.b2UsingDefaults) {
+                        Text("Using build/default configuration (effective config active)", style = MonoStyleSmall, color = mono.textSecondary)
+                    }
                     vm.b2MaskedKey?.let {
                         Spacer(Modifier.height(2.dp))
-                        Text("Application key $it (stored encrypted)", style = MonoStyleSmall, color = mono.textSecondary)
+                        Text("Application key $it (stored encrypted/default)", style = MonoStyleSmall, color = mono.textSecondary)
                     }
                     Spacer(Modifier.height(10.dp))
                     SecondaryButton("Test connection", { vm.testB2Connection() })

@@ -247,6 +247,14 @@ class AuraViewModel @Inject constructor(
         }.onFailure { _firebaseMessage.value = "Google sign-in failed: ${it.message}" }
     }
 
+    fun refreshFirebaseState() {
+        _firebaseEmail.value = firebaseAuth.email
+        prefs.firebaseEnabled = firebaseAuth.signedIn
+        if (firebaseAuth.signedIn) {
+            _firebaseMessage.value = "Linked ${firebaseAuth.email ?: "account"}. Sync is ready."
+        }
+    }
+
     fun firebaseSignOut() {
         firebaseAuth.signOut()
         prefs.firebaseEnabled = false
@@ -268,7 +276,12 @@ class AuraViewModel @Inject constructor(
     val b2Message: StateFlow<String> = _b2Message.asStateFlow()
 
     val b2Configured: Boolean get() = b2.isConfigured()
-    val b2MaskedKey: String? get() = secureKeys.maskedB2ApplicationKey()
+    val b2MaskedKey: String? get() = secureKeys.maskedB2ApplicationKey() ?: b2.effectiveConfig()?.applicationKey?.let { key ->
+        if (key.length <= 8) "••••" else key.take(4) + "••••" + key.takeLast(4)
+    }
+    val b2EffectiveBucket: String? get() = b2.effectiveConfig()?.bucket
+    val b2EffectiveEndpoint: String? get() = b2.effectiveConfig()?.endpoint
+    val b2UsingDefaults: Boolean get() = b2.isUsingDefaults()
 
     fun saveB2Credentials(bucket: String, endpoint: String, keyId: String, applicationKey: String) = viewModelScope.launch {
         _b2Message.value = "Saving…"

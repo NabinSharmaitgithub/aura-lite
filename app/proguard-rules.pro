@@ -20,6 +20,11 @@
 # Hilt
 -keep class dagger.hilt.** { *; }
 
+# MCP server / JSON-RPC models used reflectively by serialization in release builds.
+-keep class com.aura.mcp.** { *; }
+-keepclassmembers class com.aura.mcp.** { *; }
+-keep @kotlinx.serialization.Serializable class com.aura.mcp.** { *; }
+
 # Ktor/Netty ship optional transports, codecs and logging backends that Android does not use.
 # Silence the missing-class warnings so R8 does not fail the release build.
 -dontwarn io.netty.**

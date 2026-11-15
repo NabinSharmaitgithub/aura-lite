@@ -35,12 +35,12 @@ class B2Client @Inject constructor(
     )
 
     fun config(): Config? {
-        val endpoint = settings.b2Endpoint.trim().removePrefix("https://").removePrefix("http://").trimEnd('/')
-        if (endpoint.isBlank()) return null
-        val bucket = settings.b2BucketName.trim()
-        val keyId = keys.b2KeyId
-        val key = keys.b2ApplicationKey
-        if (bucket.isBlank() || keyId == null || key == null) return null
+        val endpoint = (settings.b2Endpoint.ifBlank { com.aura.aura_ui.BuildConfig.B2_DEFAULT_ENDPOINT })
+            .trim().removePrefix("https://").removePrefix("http://").trimEnd('/')
+        val bucket = (settings.b2BucketName.ifBlank { com.aura.aura_ui.BuildConfig.B2_DEFAULT_BUCKET }).trim()
+        val keyId = keys.b2KeyId ?: com.aura.aura_ui.BuildConfig.B2_DEFAULT_KEY_ID.takeIf { it.isNotBlank() }
+        val key = keys.b2ApplicationKey ?: com.aura.aura_ui.BuildConfig.B2_DEFAULT_APP_KEY.takeIf { it.isNotBlank() }
+        if (endpoint.isBlank() || bucket.isBlank() || keyId == null || key == null) return null
         return Config(endpoint, bucket, keyId, key)
     }
 

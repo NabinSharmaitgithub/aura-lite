@@ -226,6 +226,22 @@ object LlmEndpointCatalog {
             keyUrl = "https://platform.deepseek.com/api_keys",
             defaultModelId = "",
         ),
+        LlmEndpoint(
+            id = "nvidia",
+            displayName = "NVIDIA",
+            baseUrl = "https://integrate.api.nvidia.com/v1",
+            chatCompletionsPath = "/chat/completions",
+            modelsUrl = "https://api.nvidia.com/v1/models",
+            authScheme = AuthScheme.BEARER,
+            modelListStyle = ModelListStyle.OPENAI_DATA,
+            visionInference = VisionInference.GENERIC,
+            reasoningInference = ReasoningInference.NONE,
+            profile = ProviderProfile(),
+            isBuiltIn = true,
+            keyHint = "nvapi-…",
+            keyUrl = "https://build.nvidia.com/",
+            defaultModelId = "",
+        ),
     )
 
     val BUILTINS: List<LlmEndpoint> get() = builtIns
