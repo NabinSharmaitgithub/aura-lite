@@ -4,6 +4,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Tests for the wire-level relay that round-trips Gemini 3's per-tool-call
@@ -12,6 +15,8 @@ import org.junit.Test
  * The two transforms are pure (no I/O), so they're driven directly with the exact
  * JSON shapes Gemini emits on the `/v1beta/openai/chat/completions` surface.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class GeminiThoughtSignatureRelayTest {
 
     private val responseWithSignature = """

@@ -17,6 +17,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Exercises the REAL [LiveSession] — its socket callbacks and its own `dispatchToolCall` — through
@@ -26,6 +29,8 @@ import org.junit.Test
  * the dispatch logic and therefore stays green through any regression in the shipping method.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class LiveSessionTest {
 
     // ── fakes ────────────────────────────────────────────────────────────────

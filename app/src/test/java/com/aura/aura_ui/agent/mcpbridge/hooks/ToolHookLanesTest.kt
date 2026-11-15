@@ -8,8 +8,13 @@ import kotlinx.serialization.json.buildJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /** E6 — lane routing + GP14 confirm composition on the chain. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ToolHookLanesTest {
 
     private fun confirmHook(reason: String) = object : PreToolHook {

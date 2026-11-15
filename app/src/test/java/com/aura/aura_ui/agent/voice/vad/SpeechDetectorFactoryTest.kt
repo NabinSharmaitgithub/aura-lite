@@ -3,12 +3,17 @@ package com.aura.aura_ui.agent.voice.vad
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * onnxruntime-android can't run on the JVM, so these tests cover the factory's
  * fallback contract with injected scorers; Silero inference itself is verified
  * in the on-device smoke (plan Task 6).
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class SpeechDetectorFactoryTest {
 
     private class FakeNeural : FrameScorer {

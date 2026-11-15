@@ -173,15 +173,15 @@ class StepVerificationTest {
         assertNull(RunLedgerRenderer.checkpoint(c.snapshot()))
     }
 
-    @Test fun `four calls without progress ask once, then again four later`() = runTest {
+    @Test fun `five calls without progress ask once, then again five later`() = runTest {
         val c = planned("a", "b")
         c.noteTurn(3, null)
         assertNull(RunLedgerRenderer.checkpoint(c.snapshot()))
-        c.noteTurn(2, null) // 5: crossed 4
+        c.noteTurn(2, null) // 5: crossed checkpoint threshold
         assertTrue(RunLedgerRenderer.checkpoint(c.snapshot())!!.contains("last 5 calls"))
         c.noteTurn(1, null) // 6: same stretch
         assertNull(RunLedgerRenderer.checkpoint(c.snapshot()))
-        c.noteTurn(2, null) // 8: crossed 8
+        c.noteTurn(4, null) // 10: next threshold
         assertNotNull(RunLedgerRenderer.checkpoint(c.snapshot()))
     }
 

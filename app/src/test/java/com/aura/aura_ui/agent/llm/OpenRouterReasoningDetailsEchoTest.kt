@@ -4,6 +4,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Tests for the wire-level echo of OpenRouter's message-level `reasoning_details`
@@ -14,6 +17,8 @@ import org.junit.Test
  * Mirrors [GeminiThoughtSignatureRelayTest] — the transforms are pure, driven with the
  * exact JSON shapes OpenRouter emits on `/api/v1/chat/completions`.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class OpenRouterReasoningDetailsEchoTest {
 
     private val responseWithDetails = """

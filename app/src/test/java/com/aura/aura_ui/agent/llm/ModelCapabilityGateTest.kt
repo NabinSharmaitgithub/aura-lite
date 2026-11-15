@@ -3,12 +3,17 @@ package com.aura.aura_ui.agent.llm
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The runtime wire-gate ([ProviderRegistry.gateReasoning]) is the third, independent guard (alongside
  * the UI per-model gate and the control-hidden default) that keeps a reasoning level off a model that
  * can't honor it. Its contract: only ever REMOVE reasoning; never add; leave a default config alone.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ModelCapabilityGateTest {
 
     private val groq = LlmEndpointCatalog.builtinById("groq")!!

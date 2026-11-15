@@ -4,6 +4,9 @@ import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The conversation plane wrote a full on-disk log from day one and **nothing read it**.
@@ -15,6 +18,8 @@ import org.junit.Test
  * produce must appear in the trace, and a live session must not describe itself as an
  * external MCP one.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class SessionHtmlRendererTest {
 
     private fun liveSession(vararg utterances: Utterance) = SessionLog(

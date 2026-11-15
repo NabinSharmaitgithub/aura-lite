@@ -11,7 +11,12 @@ import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ToolHookChainTest {
     private val noCtx = HookContext(confirm = { true })
     private fun ok(text: String = "ok") = CallToolResult(content = listOf(TextContent(text)), isError = false)

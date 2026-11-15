@@ -7,6 +7,9 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 private class FakeSink : ToolTelemetrySink {
     var lastToolName: String? = null
@@ -22,6 +25,8 @@ private class FakeSink : ToolTelemetrySink {
     }
 }
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class DispatchWithTelemetryTest {
     private fun ok() = CallToolResult(content = listOf(TextContent("ok")), isError = false)
     private fun failed() = CallToolResult(content = listOf(TextContent("bad")), isError = true)

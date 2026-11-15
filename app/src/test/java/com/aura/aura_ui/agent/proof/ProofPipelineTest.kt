@@ -15,12 +15,17 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The proof pipeline's load-bearing decisions: a quote is only proof if the run read it, a success
  * claim is only allowed once the proof matches the declared target, and a judge verdict is only
  * trusted when it parses.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ProofPipelineTest {
 
     private val screen = """

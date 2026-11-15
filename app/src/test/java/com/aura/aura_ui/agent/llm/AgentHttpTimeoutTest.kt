@@ -7,7 +7,6 @@ import io.ktor.http.contentType
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
-import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -48,8 +47,8 @@ class AgentHttpTimeoutTest {
     @Test(timeout = 30_000)
     fun `a request that never gets a response fails instead of hanging`() {
         val server = MockWebServer()
-        // Accept the connection, then never answer — a half-open socket.
-        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        // Accept the connection, then stall long enough that client timeouts must fire.
+        server.enqueue(MockResponse().setHeadersDelay(testBudgetMs + 10_000, TimeUnit.MILLISECONDS).setBody("{}"))
         server.start()
 
         try {
