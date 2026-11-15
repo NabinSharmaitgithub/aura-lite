@@ -17,6 +17,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The brain lane died on every Gemini user with `HTTP 400: "Missing or invalid Authorization
@@ -29,6 +32,8 @@ import org.junit.Test
  * the models-fetch scheme for the chat leg, so the models list worked, the chat call did not,
  * and the failure was invisible on Bearer-only providers like Groq.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class BrainChatTest {
 
     /** Captures the outgoing request and answers with a canned completion — no network. */

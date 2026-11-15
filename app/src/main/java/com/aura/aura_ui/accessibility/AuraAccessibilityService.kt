@@ -160,8 +160,8 @@ class AuraAccessibilityService : AccessibilityService() {
         "lock" -> lockDevice()
         else -> false
     }
-    fun getScreenWidth(): Int = resources.displayMetrics.widthPixels
-    fun getScreenHeight(): Int = resources.displayMetrics.heightPixels
+    fun getScreenWidth(): Int = ScreenGeometry.realSizePx(this).first
+    fun getScreenHeight(): Int = ScreenGeometry.realSizePx(this).second
     fun getUITree(): Map<String, Any>? = emptyMap()
     fun captureScreen(): String? = kotlinx.coroutines.runBlocking {
         val shot = captureScreenshot()

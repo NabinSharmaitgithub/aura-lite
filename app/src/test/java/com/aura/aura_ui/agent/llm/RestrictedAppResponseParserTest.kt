@@ -8,6 +8,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * RestrictedAppResponseParser — defensive parsing of an LLM's free-text
@@ -17,6 +20,8 @@ import org.junit.Test
  * those failure shapes, verifying the parser degrades gracefully instead of
  * crashing or fabricating a suggestion for something never asked about.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class RestrictedAppResponseParserTest {
 
     private val bank = AppInfo(packageName = "com.bank.app", appName = "MyBank")

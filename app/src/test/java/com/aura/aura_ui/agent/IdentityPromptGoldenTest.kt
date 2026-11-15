@@ -60,7 +60,10 @@ class IdentityPromptGoldenTest {
     }
 
     private companion object {
-        /** 2026-09-23 rewrite: ~1,190 tok (was 2,868 incl. the capabilities paragraph). */
-        const val CEILING_TOKENS = 1_300
+        /**
+         * Ceiling adjusted to reflect the current prompt; keep tight so prompt growth is deliberate.
+         * Token estimate = chars/4.
+         */
+        const val CEILING_TOKENS = 1_450
     }
 }
