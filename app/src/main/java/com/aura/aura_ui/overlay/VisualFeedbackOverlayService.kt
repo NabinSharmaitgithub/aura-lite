@@ -1,4 +1,4 @@
-package com.aura.aura_ui.overlay
+﻿package com.aura.aura_ui.overlay
 
 import android.app.Service
 import android.content.Context
@@ -107,8 +107,7 @@ class VisualFeedbackOverlayService : Service() {
 
     companion object {
         @Volatile
-        var instance: VisualFeedbackOverlayService? = null
-            private set
+        private var instance: VisualFeedbackOverlayService? = null
 
         fun getInstance(): VisualFeedbackOverlayService? = instance
 
