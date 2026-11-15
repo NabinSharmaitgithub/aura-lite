@@ -447,8 +447,6 @@ class AuraAccessibilityService : AccessibilityService() {
 
         val screenCaptureAvailable = kotlinx.coroutines.flow.MutableStateFlow(false)
 
-        val screenCaptureAvailable = kotlinx.coroutines.flow.MutableStateFlow(false)
-
         @Volatile
         var pendingMediaProjectionResultCode: Int? = null
 

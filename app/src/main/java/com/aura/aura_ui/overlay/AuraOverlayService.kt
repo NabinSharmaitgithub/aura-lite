@@ -68,6 +68,13 @@ class AuraOverlayService : Service() {
 
     fun updateLiveNotification(agent: String, output: String) = Companion.updateLiveNotification(agent, output)
     fun updateLiveNotificationProgress(agent: String, step: String) = Companion.updateLiveNotificationProgress(agent, step)
+    fun updateLiveNotificationProgress(
+        goal: String,
+        current: Int,
+        total: Int,
+        isComplete: Boolean = false,
+        isAborted: Boolean = false,
+    ) = Companion.updateLiveNotificationProgress(goal, current, total, isComplete, isAborted)
     fun endVoiceConversation() = Companion.endVoiceConversation()
 
     override fun onCreate() {
@@ -519,6 +526,28 @@ class AuraOverlayService : Service() {
 
         fun updateLiveNotificationProgress(agent: String, step: String) {
             instance?.view?.updateLiveCaption(step)
+        }
+
+        fun updateLiveNotificationProgress(
+            goal: String,
+            current: Int,
+            total: Int,
+            isComplete: Boolean = false,
+            isAborted: Boolean = false,
+        ) {
+            val status = if (isComplete) "Completed" else if (isAborted) "Stopped" else " of "
+            instance?.view?.updateLiveCaption(" ()")
+        }
+
+        fun updateLiveNotificationProgress(
+            goal: String,
+            current: Int,
+            total: Int,
+            isComplete: Boolean = false,
+            isAborted: Boolean = false,
+        ) {
+            val status = if (isComplete) "Completed" else if (isAborted) "Stopped" else " of "
+            instance?.view?.updateLiveCaption(" ()")
         }
 
         fun endVoiceConversation() {

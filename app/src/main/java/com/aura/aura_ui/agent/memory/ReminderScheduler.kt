@@ -15,7 +15,7 @@ class ReminderScheduler @Inject constructor(
 ) {
     fun schedule(text: String, atEpochMs: Long) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        val intent = Intent(context, com.aura.aura_ui.receivers.ReminderReceiver::class.java).apply {
+        val intent = Intent(context, ReminderReceiver::class.java).apply {
             putExtra("text", text)
         }
         val pi = PendingIntent.getBroadcast(
@@ -29,7 +29,7 @@ class ReminderScheduler @Inject constructor(
 
     fun cancel(id: Long) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        val intent = Intent(context, com.aura.aura_ui.receivers.ReminderReceiver::class.java)
+        val intent = Intent(context, ReminderReceiver::class.java)
         val pi = PendingIntent.getBroadcast(
             context,
             id.hashCode(),
@@ -44,7 +44,7 @@ class ReminderScheduler @Inject constructor(
 
     fun scheduleAlarm(id: Long, text: String, triggerAt: Long) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        val intent = Intent(context, com.aura.aura_ui.receivers.ReminderReceiver::class.java).apply {
+        val intent = Intent(context, ReminderReceiver::class.java).apply {
             putExtra("id", id)
             putExtra("text", text)
         }
