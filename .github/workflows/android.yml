@@ -358,6 +358,5 @@ jobs:
             app/build/outputs/bundle/release/*.aab
           generate_release_notes: true
           fail_on_unmatched_files: false
-          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
