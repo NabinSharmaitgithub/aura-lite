@@ -1,21 +1,99 @@
 {
-  "version": 1,
-  "note": "Known deep links used by resolve_deeplink and list_app_deeplinks. Packages are resolved live; these are hints, not a whitelist.",
-  "links": [
-    { "package": "com.android.settings", "uri": "android.settings.WIFI_SETTINGS", "label": "Wi-Fi settings" },
-    { "package": "com.android.settings", "uri": "android.settings.BLUETOOTH_SETTINGS", "label": "Bluetooth settings" },
-    { "package": "com.android.settings", "uri": "android.settings.APPLICATION_DETAILS_SETTINGS", "label": "App info" },
-    { "package": "com.google.android.apps.maps", "uri": "geo:0,0?q=", "label": "Maps search" },
-    { "package": "com.google.android.apps.maps", "uri": "google.navigation:q=", "label": "Maps navigation" },
-    { "package": "com.whatsapp", "uri": "https://wa.me/", "label": "WhatsApp chat" },
-    { "package": "com.google.android.gm", "uri": "mailto:", "label": "Compose email" },
-    { "package": "com.android.chrome", "uri": "https://", "label": "Browser" },
-    { "package": "com.google.android.dialer", "uri": "tel:", "label": "Dialer" },
-    { "package": "com.google.android.apps.messaging", "uri": "smsto:", "label": "Messages" },
-    { "package": "com.google.android.youtube", "uri": "vnd.youtube:", "label": "YouTube" },
-    { "package": "com.google.android.youtube", "uri": "https://www.youtube.com/results?search_query=", "label": "YouTube search" },
-    { "package": "com.spotify.music", "uri": "spotify:", "label": "Spotify" },
-    { "package": "com.garena.game.freefire", "uri": "https://play.google.com/store/apps/details?id=com.garena.game.freefire", "label": "Free Fire on Google Play" },
-    { "package": "com.garena.game.freefiremax", "uri": "https://play.google.com/store/apps/details?id=com.garena.game.freefiremax", "label": "Free Fire Max on Google Play" }
-  ]
+  "apps": {
+    "com.android.settings": {
+      "app_name": "Settings",
+      "entries": [
+        { "label": "Wi-Fi settings", "uri": "android.settings.WIFI_SETTINGS" },
+        { "label": "Bluetooth settings", "uri": "android.settings.BLUETOOTH_SETTINGS" },
+        { "label": "App info", "uri": "android.settings.APPLICATION_DETAILS_SETTINGS" }
+      ]
+    },
+    "com.spotify.music": {
+      "app_name": "Spotify",
+      "entries": [
+        { "label": "Open Spotify", "uri": "spotify:" },
+        { "label": "Search", "uri_template": "spotify:search:{query}" }
+      ]
+    },
+    "com.google.android.youtube": {
+      "app_name": "YouTube",
+      "entries": [
+        { "label": "Open YouTube", "uri": "vnd.youtube:" },
+        { "label": "Search", "uri_template": "https://www.youtube.com/results?search_query={query}" }
+      ]
+    },
+    "com.google.android.apps.maps": {
+      "app_name": "Google Maps",
+      "entries": [
+        { "label": "Search a place", "uri_template": "https://www.google.com/maps/search/{query}" },
+        { "label": "Navigate", "uri_template": "google.navigation:q={destination}" },
+        { "label": "Directions with stops", "uri_template": "https://www.google.com/maps/dir/?api=1&origin={origin}&destination={destination}&waypoints={stops}" }
+      ]
+    },
+    "com.whatsapp": {
+      "app_name": "WhatsApp",
+      "entries": [
+        { "label": "Open chat", "uri_template": "https://wa.me/{number}" },
+        { "label": "Open WhatsApp", "uri": "whatsapp://" }
+      ]
+    },
+    "com.google.android.gm": {
+      "app_name": "Gmail",
+      "entries": [
+        { "label": "Compose email", "uri": "mailto:" }
+      ]
+    },
+    "com.instagram.android": {
+      "app_name": "Instagram",
+      "entries": [
+        { "label": "Open Instagram", "uri": "instagram://" },
+        { "label": "Profile", "uri_template": "https://www.instagram.com/{username}/" }
+      ]
+    },
+    "org.telegram.messenger": {
+      "app_name": "Telegram",
+      "entries": [
+        { "label": "Open Telegram", "uri": "tg://" },
+        { "label": "Open chat", "uri_template": "https://t.me/{username}" }
+      ]
+    },
+    "com.twitter.android": {
+      "app_name": "X",
+      "entries": [
+        { "label": "Open X", "uri": "twitter://" },
+        { "label": "Profile", "uri_template": "https://twitter.com/{username}" }
+      ]
+    },
+    "com.android.vending": {
+      "app_name": "Google Play",
+      "entries": [
+        { "label": "App details", "uri_template": "https://play.google.com/store/apps/details?id={package}" }
+      ]
+    },
+    "com.android.chrome": {
+      "app_name": "Chrome",
+      "entries": [
+        { "label": "Open URL", "uri_template": "https://{url}" }
+      ]
+    },
+    "com.google.android.calendar": {
+      "app_name": "Google Calendar",
+      "entries": [
+        { "label": "Open Calendar", "uri": "content://com.android.calendar/time/" }
+      ]
+    },
+    "com.flipkart.android": {
+      "app_name": "Flipkart",
+      "entries": [
+        { "label": "Open Flipkart", "uri": "flipkart://" },
+        { "label": "Search", "uri_template": "https://www.flipkart.com/search?q={query}" }
+      ]
+    },
+    "com.google.android.apps.photos": {
+      "app_name": "Google Photos",
+      "entries": [
+        { "label": "Open Photos", "uri": "content://media/external/images/media" }
+      ]
+    }
+  }
 }

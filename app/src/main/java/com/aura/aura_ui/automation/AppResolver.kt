@@ -254,18 +254,18 @@ class AppResolver @Inject constructor(@ApplicationContext private val context: C
     }
 
     fun listAppDeeplinks(packageName: String): ToolResult {
-        val catalog = runCatching {
+        val links = runCatching {
             val raw = context.assets.open("deeplink_catalog.json").bufferedReader().use { it.readText() }
             val root = kotlinx.serialization.json.Json.parseToJsonElement(raw).jsonObject
-            (root["apps"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
+            val apps = root["apps"]?.jsonObject ?: return@runCatching emptyList()
+            val app = apps[packageName]?.jsonObject ?: return@runCatching emptyList()
+            val entries = app["entries"]?.let { it as? kotlinx.serialization.json.JsonArray } ?: kotlinx.serialization.json.JsonArray(emptyList())
+            entries.mapNotNull { it as? JsonObject }
         }.getOrDefault(emptyList())
-        val matches = catalog.filter {
-            (it["package"] as? kotlinx.serialization.json.JsonPrimitive)?.content == packageName
-        }
         return ToolResult.ok(
             observed = buildJsonObject {
                 put("package", packageName)
-                put("links", buildJsonArray { matches.forEach { add(it["links"] ?: it) } })
+                put("links", buildJsonArray { links.forEach { add(it) } })
             },
         )
     }
