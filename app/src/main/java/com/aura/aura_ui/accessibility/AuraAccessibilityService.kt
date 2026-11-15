@@ -123,8 +123,7 @@ class AuraAccessibilityService : AccessibilityService() {
     suspend fun strokesAwait(strokes: List<List<Pair<Int, Int>>>, durationMs: Long, holdMs: Long): Boolean = true
 
     suspend fun scrollAwait(direction: String): Boolean {
-        val width = resources.displayMetrics.widthPixels
-        val height = resources.displayMetrics.heightPixels
+        val (width, height) = ScreenGeometry.realSizePx(this)
         val midX = width / 2
         val midY = height / 2
         return when (direction.lowercase()) {

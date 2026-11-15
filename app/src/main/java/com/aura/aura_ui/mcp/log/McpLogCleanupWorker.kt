@@ -42,12 +42,14 @@ class McpLogCleanupWorker(
                 repeatInterval = 1,
                 repeatIntervalTimeUnit = TimeUnit.DAYS,
             ).build()
-            WorkManager.getInstance(context.applicationContext)
-                .enqueueUniquePeriodicWork(
-                    UNIQUE_WORK_NAME,
-                    ExistingPeriodicWorkPolicy.KEEP,
-                    request,
-                )
+            runCatching {
+                WorkManager.getInstance(context.applicationContext)
+                    .enqueueUniquePeriodicWork(
+                        UNIQUE_WORK_NAME,
+                        ExistingPeriodicWorkPolicy.KEEP,
+                        request,
+                    )
+            }
         }
     }
 }

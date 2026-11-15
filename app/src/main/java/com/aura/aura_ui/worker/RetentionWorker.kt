@@ -43,11 +43,13 @@ class RetentionWorker(
             val request = PeriodicWorkRequestBuilder<RetentionWorker>(12, TimeUnit.HOURS)
                 .setConstraints(Constraints.NONE)
                 .build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
-                request,
-            )
+            runCatching {
+                WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                    NAME,
+                    ExistingPeriodicWorkPolicy.KEEP,
+                    request,
+                )
+            }
         }
     }
 }

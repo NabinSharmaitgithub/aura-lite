@@ -14,6 +14,7 @@ import android.text.TextPaint
 import android.view.MotionEvent
 import android.view.View
 import android.view.animation.LinearInterpolator
+import com.aura.aura_ui.accessibility.ScreenGeometry
 import com.aura.aura_ui.state.PillState
 import kotlin.math.sin
 
@@ -303,7 +304,7 @@ class OverlayPillView(context: Context) : View(context) {
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val screenWidth = resources.displayMetrics.widthPixels
+        val (screenWidth, _) = ScreenGeometry.realSizePx(context)
         val viewWidth = (screenWidth * 0.92f).toInt().coerceAtMost((560 * density).toInt())
 
         val (displayText, _) = getDisplayTextAndHeader()
