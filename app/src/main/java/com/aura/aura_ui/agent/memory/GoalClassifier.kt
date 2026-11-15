@@ -39,8 +39,8 @@ object AppPackageResolver {
         // package_name arg) beats name-map guessing — this is what keeps Amazon &
         // co. out of the `unknown` bucket. Most frequently observed package wins.
         observed.filter { PACKAGE_ID.matches(it) }
-            .groupingBy { it }.eachCount()
-            .maxByOrNull { it.value }?.key
+            .groupBy { it }
+            .maxByOrNull { (_, v) -> v.size }?.key
             ?.let { return it }
         val hay = (observed + goal).joinToString(" ").lowercase()
         APP_NAMES.forEach { (name, pkg) -> if (hay.contains(name) || hay.contains(pkg)) return pkg }
