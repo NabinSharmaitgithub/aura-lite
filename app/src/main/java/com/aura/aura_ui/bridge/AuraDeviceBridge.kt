@@ -55,6 +55,7 @@ class AuraDeviceBridge @Inject constructor(
     private val b2: com.aura.aura_ui.b2.B2Service,
     private val askUsers: com.aura.aura_ui.agent.AskUserBroker,
     private val agentRuntime: Provider<AgentRuntime>,
+    private val secureKeyStore: com.aura.aura_ui.data.prefs.SecureKeyStore,
 ) : DeviceBridge {
 
     override suspend fun execute(tool: String, args: JsonObject): ToolResult {
@@ -215,6 +216,54 @@ class AuraDeviceBridge @Inject constructor(
                 value = JsonArgs.rawStr(args, "value"),
                 packageName = JsonArgs.str(args, "package"),
             )
+            "lock_device" -> withService { service ->
+                val ok = service.lockDevice()
+                if (ok) {
+                    ToolResult.ok(changed = true, observed = buildJsonObject { put("status", "device_locked") })
+                } else {
+                    ToolResult.fail(ToolError.internal("Lock device failed. Accessibility permission required."))
+                }
+            }
+            "unlock_device" -> withService { service ->
+                val pin = JsonArgs.str(args, "pin")
+                val mode = JsonArgs.str(args, "mode")
+                val ok = service.unlockDevice(pin, mode)
+                if (ok) {
+                    ToolResult.ok(changed = true, observed = buildJsonObject { put("status", "device_unlocked") })
+                } else {
+                    ToolResult.fail(ToolError.internal("Unlock device failed."))
+                }
+            }
+            "get_saved_credential" -> {
+                val serviceName = JsonArgs.str(args, "service")
+                    ?: return ToolResult.fail(ToolError("invalid_args", "service is required"))
+                if (serviceName.equals("phone_unlock", ignoreCase = true) || serviceName.equals("lock", ignoreCase = true)) {
+                    val secret = secureKeyStore.phoneUnlockSecret
+                    val type = secureKeyStore.phoneUnlockType
+                    if (secret != null) {
+                        ToolResult.ok(observed = buildJsonObject {
+                            put("service", "phone_unlock")
+                            put("type", type)
+                            put("secret", secret)
+                        })
+                    } else {
+                        ToolResult.fail(ToolError.notFound("No phone unlock credential stored in vault."))
+                    }
+                } else {
+                    val item = secureKeyStore.findVaultItem(serviceName)
+                    if (item != null) {
+                        ToolResult.ok(observed = buildJsonObject {
+                            put("service", item.service)
+                            put("username", item.username)
+                            put("secret", item.secret)
+                            put("category", item.category)
+                            put("notes", item.notes)
+                        })
+                    } else {
+                        ToolResult.fail(ToolError.notFound("No saved credential found for '$serviceName' in vault."))
+                    }
+                }
+            }
             "watch_device_events" -> watchEvents(args)
 
             // ── Media / notifications ─────────────────────────────────────────────

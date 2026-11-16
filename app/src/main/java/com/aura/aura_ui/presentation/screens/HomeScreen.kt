@@ -55,12 +55,14 @@ import com.aura.aura_ui.presentation.components.SessionRow
 import com.aura.aura_ui.presentation.navigation.Routes
 import com.aura.aura_ui.presentation.rememberPermissions
 import com.aura.aura_ui.ui.components.AuraTextField
+import com.aura.aura_ui.ui.components.Badge
 import com.aura.aura_ui.ui.components.ChipTone
 import com.aura.aura_ui.ui.components.EmptyState
 import com.aura.aura_ui.ui.components.GhostButton
 import com.aura.aura_ui.ui.components.GroupedList
 import com.aura.aura_ui.ui.components.InkButton
 import com.aura.aura_ui.ui.components.PermissionBanner
+import com.aura.aura_ui.ui.components.SecondaryButton
 import com.aura.aura_ui.ui.components.StatusChip
 import com.aura.aura_ui.ui.components.SurfaceCard
 import com.aura.aura_ui.ui.theme.LocalMonoScheme
@@ -96,6 +98,10 @@ fun AuraHomeScreen(
     val permissions = rememberPermissions(vm)
     val askPending by vm.askPending.collectAsStateWithLifecycle()
     val interruptedGoal by vm.interruptedGoal.collectAsStateWithLifecycle()
+    val meetingState by vm.meetingState.collectAsStateWithLifecycle()
+    val meetingTranscript by vm.meetingLiveTranscript.collectAsStateWithLifecycle()
+    val meetingLatestLine by vm.meetingLatestLine.collectAsStateWithLifecycle()
+    val meetingSummary by vm.meetingSummary.collectAsStateWithLifecycle()
 
     var goal by remember { mutableStateOf("") }
     val endpoint = vm.currentEndpoint()
@@ -137,6 +143,85 @@ fun AuraHomeScreen(
                     Spacer(Modifier.height(18.dp))
                 }
             }
+            if (meetingState != com.aura.aura_ui.meeting.MeetingState.IDLE) {
+                item {
+                    SurfaceCard {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (meetingState == com.aura.aura_ui.meeting.MeetingState.RECORDING) mono.blood else mono.accent
+                                    )
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = when (meetingState) {
+                                    com.aura.aura_ui.meeting.MeetingState.RECORDING -> "Meeting Recording in Real-time"
+                                    com.aura.aura_ui.meeting.MeetingState.PROMPTING_SUMMARY -> "Meeting Over · Saved"
+                                    com.aura.aura_ui.meeting.MeetingState.SUMMARIZING -> "Summarizing Meeting..."
+                                    com.aura.aura_ui.meeting.MeetingState.COMPLETED -> "Meeting Notes & Summary"
+                                    else -> ""
+                                },
+                                style = androidx.compose.material3.MaterialTheme.typography.titleSmall,
+                                color = mono.textPrimary,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Badge("${meetingTranscript.size} notes", tone = ChipTone.Live)
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
+                        if (meetingState == com.aura.aura_ui.meeting.MeetingState.RECORDING) {
+                            Text(
+                                text = if (meetingLatestLine.isNotBlank()) "Listening: \"$meetingLatestLine\"" else "Listening for speech & writing notes...",
+                                style = MonoStyleSmall,
+                                color = mono.accent,
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            InkButton(
+                                label = "End Meeting",
+                                onClick = { vm.endMeeting() },
+                            )
+                        } else if (meetingState == com.aura.aura_ui.meeting.MeetingState.PROMPTING_SUMMARY) {
+                            Text(
+                                text = "The meeting is over and your notes have been saved. Would you like AURA to summarize the meeting notes?",
+                                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                                color = mono.textPrimary,
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                InkButton(
+                                    label = "Yes, Summarize",
+                                    onClick = { vm.respondToMeetingSummary(true) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                GhostButton(
+                                    label = "Keep Exact",
+                                    onClick = { vm.respondToMeetingSummary(false) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        } else if (meetingState == com.aura.aura_ui.meeting.MeetingState.COMPLETED) {
+                            if (!meetingSummary.isNullOrBlank()) {
+                                Text(
+                                    text = meetingSummary!!,
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                                    color = mono.textPrimary,
+                                )
+                                Spacer(Modifier.height(10.dp))
+                            }
+                            SecondaryButton(
+                                label = "Dismiss Meeting",
+                                onClick = { vm.resetMeeting() },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(18.dp))
+                }
+            }
+
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -152,14 +237,21 @@ fun AuraHomeScreen(
                             color = mono.textPrimary,
                         )
                     }
+                    val email by vm.firebaseEmail.collectAsStateWithLifecycle()
+                    val avatarLetter = remember(settings.userName, email) {
+                        if (settings.userName.isNotBlank()) settings.userName.take(1).uppercase()
+                        else if (!email.isNullOrBlank()) email!!.take(1).uppercase()
+                        else "A"
+                    }
                     Box(
                         Modifier
                             .size(52.dp)
                             .clip(CircleShape)
-                            .background(mono.ink),
+                            .background(mono.ink)
+                            .clickable { onNavigate(Routes.PROFILE) },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = mono.textOnInk, modifier = Modifier.size(24.dp))
+                        Text(avatarLetter, style = androidx.compose.material3.MaterialTheme.typography.titleMedium, color = mono.textOnInk)
                     }
                 }
             }
@@ -297,6 +389,14 @@ fun AuraHomeScreen(
                         tone = if (health.running) ChipTone.Live else ChipTone.Idle,
                         count = if (health.running) health.clientCount else null,
                         onClick = { onNavigate(Routes.SETTINGS_TRUSTED_DEVICES) },
+                    )
+                    StatusChip(
+                        label = if (meetingState == com.aura.aura_ui.meeting.MeetingState.RECORDING) "Rec Meeting" else "Meeting",
+                        tone = if (meetingState == com.aura.aura_ui.meeting.MeetingState.RECORDING) ChipTone.Live else ChipTone.Idle,
+                        onClick = {
+                            if (meetingState == com.aura.aura_ui.meeting.MeetingState.RECORDING) vm.endMeeting()
+                            else vm.startMeeting()
+                        },
                     )
                 }
             }

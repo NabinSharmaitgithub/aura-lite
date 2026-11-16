@@ -60,6 +60,13 @@ class FirebaseAuthManager @Inject constructor(
                 ?: throw IllegalStateException("Google sign-in returned no user")
         }
 
+    suspend fun sendPasswordReset(email: String): Result<Unit> =
+        runCatching {
+            val firebase = auth ?: throw IllegalStateException("Firebase is not configured on this build")
+            require(email.isNotBlank()) { "Email is required" }
+            firebase.sendPasswordResetEmail(email.trim()).await()
+        }
+
     fun signOut() {
         runCatching { auth?.signOut() }
     }

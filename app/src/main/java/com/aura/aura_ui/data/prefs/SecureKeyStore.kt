@@ -93,9 +93,77 @@ class SecureKeyStore @Inject constructor(@ApplicationContext private val context
         return key.take(4) + "••••" + key.takeLast(4)
     }
 
+    // ── Credential & Unlock Vault ─────────────────────────────────────────────
+
+    var phoneUnlockType: String
+        get() = prefs.getString("phone_unlock_type", "none") ?: "none"
+        set(value) = prefs.edit().putString("phone_unlock_type", value.trim().lowercase()).apply()
+
+    var phoneUnlockSecret: String?
+        get() = prefs.getString("phone_unlock_secret", null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            if (value.isNullOrBlank()) prefs.edit().remove("phone_unlock_secret").apply()
+            else prefs.edit().putString("phone_unlock_secret", value.trim()).apply()
+        }
+
+    fun hasPhoneUnlock(): Boolean = !phoneUnlockSecret.isNullOrBlank()
+
+    fun savePhoneUnlock(type: String, secret: String) {
+        phoneUnlockType = type
+        phoneUnlockSecret = secret
+    }
+
+    fun clearPhoneUnlock() {
+        prefs.edit().remove("phone_unlock_type").remove("phone_unlock_secret").apply()
+    }
+
+    fun getVaultItems(): List<VaultItem> {
+        val raw = prefs.getString("vault_items_json", null) ?: return emptyList()
+        return runCatching {
+            val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            json.decodeFromString<List<VaultItem>>(raw)
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveVaultItem(item: VaultItem) {
+        val current = getVaultItems().toMutableList()
+        val index = current.indexOfFirst { it.id == item.id }
+        if (index >= 0) {
+            current[index] = item
+        } else {
+            current.add(0, item)
+        }
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        prefs.edit().putString("vault_items_json", json.encodeToString(current)).apply()
+    }
+
+    fun removeVaultItem(id: String) {
+        val current = getVaultItems().filter { it.id != id }
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        prefs.edit().putString("vault_items_json", json.encodeToString(current)).apply()
+    }
+
+    fun findVaultItem(service: String): VaultItem? {
+        val lower = service.trim().lowercase()
+        return getVaultItems().firstOrNull {
+            it.service.lowercase().contains(lower) || lower.contains(it.service.lowercase())
+        }
+    }
+
     internal fun raw(): SharedPreferences = prefs
 
     companion object {
         const val FILE = "aura_secure"
     }
 }
+
+@kotlinx.serialization.Serializable
+data class VaultItem(
+    val id: String = java.util.UUID.randomUUID().toString().take(8),
+    val service: String,
+    val category: String = "App", // App, Passkey, Notes, PIN, Other
+    val username: String = "",
+    val secret: String,
+    val notes: String = "",
+    val updatedAt: Long = System.currentTimeMillis(),
+)

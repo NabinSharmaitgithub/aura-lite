@@ -41,6 +41,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.aura.aura_ui.presentation.screens.CredentialVaultScreen
+import com.aura.aura_ui.presentation.screens.ProfileScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aura.aura_ui.presentation.AuraViewModel
 import com.aura.aura_ui.presentation.onboarding.OnboardingScreen
 import com.aura.aura_ui.presentation.screens.ActivityScreen
@@ -50,6 +53,7 @@ import com.aura.aura_ui.presentation.screens.CompanionScreen
 import com.aura.aura_ui.presentation.screens.EvalSuiteScreen
 import com.aura.aura_ui.presentation.screens.HooksScreen
 import com.aura.aura_ui.presentation.screens.LicensesScreen
+import com.aura.aura_ui.presentation.screens.LoginScreen
 import com.aura.aura_ui.presentation.screens.MemoryScreen
 import com.aura.aura_ui.presentation.screens.MonoSettingsScreen
 import com.aura.aura_ui.presentation.screens.ReportScreen
@@ -78,7 +82,16 @@ fun AuraRoot(
     deepLinkRoute: String?,
     onDeepLinkConsumed: () -> Unit,
 ) {
-    if (!onboardingComplete) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val firebaseEmail by vm.firebaseEmail.collectAsStateWithLifecycle()
+
+    if (firebaseEmail == null && !settings.initialAuthPrompted) {
+        LoginScreen(
+            vm = vm,
+            onNavigateBack = { vm.dismissInitialAuth() },
+            onSuccess = { vm.dismissInitialAuth() },
+        )
+    } else if (!onboardingComplete) {
         OnboardingScreen(vm) {
             // The settings revision flips and the root recomposes into the shell.
         }
@@ -182,6 +195,15 @@ fun AuraAppShell(
 
             composable(Routes.SETTINGS_B2) {
                 B2Screen(vm)
+            }
+            composable(Routes.AUTH_LOGIN) {
+                LoginScreen(vm, onNavigateBack = { navController.popBackStack() })
+            }
+            composable(Routes.PROFILE) {
+                ProfileScreen(vm, onNavigate = navigate, onBack = { navController.popBackStack() })
+            }
+            composable(Routes.SETTINGS_VAULT) {
+                CredentialVaultScreen(vm, onBack = { navController.popBackStack() })
             }
             composable(Routes.SETTINGS_FIREBASE) {
                 FirebaseScreen(vm)

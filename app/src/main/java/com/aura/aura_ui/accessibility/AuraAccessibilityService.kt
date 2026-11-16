@@ -73,6 +73,7 @@ class AuraAccessibilityService : AccessibilityService() {
 
     val screenCaptureManager = ScreenCaptureManagerHelper(this)
     val uiTreeExtractor = UiTreeExtractorHelper()
+    val secureKeyStore by lazy { com.aura.aura_ui.data.prefs.SecureKeyStore(this) }
     val gestures: GestureInjector by lazy { GestureInjector(this, extractor) }
 
     suspend fun tapAwait(x: Int, y: Int): Boolean = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
@@ -318,9 +319,9 @@ class AuraAccessibilityService : AccessibilityService() {
      * 1. Acquires a temporary wake-lock to turn the display on.
      * 2. Checks if the keyguard is active.
      * 3. Dispatches a bottom-to-top swipe gesture to open the PIN keypad or dismiss lock.
-     * 4. If a PIN is provided, types each digit sequentially into the lock screen keypad.
+     * 4. Enters PIN or draws pattern if provided or saved in SecureKeyStore.
      */
-    suspend fun unlockDevice(pin: String? = null): Boolean {
+    suspend fun unlockDevice(pin: String? = null, mode: String? = null): Boolean {
         // 1. Wake screen
         val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
         val wakeLock = pm?.newWakeLock(
@@ -342,7 +343,7 @@ class AuraAccessibilityService : AccessibilityService() {
             return true
         }
 
-        // 3. Swipe up to dismiss lock screen / expose PIN keypad
+        // 3. Swipe up to dismiss lock screen / expose PIN keypad or pattern
         val metrics = resources.displayMetrics
         val width = metrics.widthPixels
         val height = metrics.heightPixels
@@ -368,13 +369,22 @@ class AuraAccessibilityService : AccessibilityService() {
             }, null)
         }
 
-        if (pin.isNullOrBlank()) {
+        val effectiveSecret = pin?.takeIf { it.isNotBlank() } ?: secureKeyStore.phoneUnlockSecret
+        val effectiveType = mode?.takeIf { it.isNotBlank() } ?: secureKeyStore.phoneUnlockType
+
+        if (effectiveSecret.isNullOrBlank()) {
             return swiped
         }
 
-        // 4. Enter PIN digits if provided
-        delay(600L) // Allow keypad to animate in
-        for (ch in pin) {
+        // 4. Enter PIN or Pattern after view animates in
+        delay(600L)
+
+        if (effectiveType.equals("pattern", ignoreCase = true)) {
+            return drawPatternGesture(effectiveSecret)
+        }
+
+        // Default PIN / digit keypad:
+        for (ch in effectiveSecret) {
             val digit = ch.toString()
             var tapped = false
             val root = currentRoot()
@@ -399,6 +409,54 @@ class AuraAccessibilityService : AccessibilityService() {
         }
 
         return true
+    }
+
+    /**
+     * Draws a pattern unlock gesture on a standard 3x3 pattern lock grid.
+     * Node numbering: 1-9 (1=top-left, 2=top-center, 3=top-right ... 9=bottom-right).
+     */
+    suspend fun drawPatternGesture(pattern: String): Boolean {
+        val clean = pattern.filter { it in '1'..'9' }
+        if (clean.length < 2) return false
+        val metrics = resources.displayMetrics
+        val width = metrics.widthPixels
+        val height = metrics.heightPixels
+
+        val left = width * 0.18f
+        val right = width * 0.82f
+        val top = height * 0.52f
+        val bottom = height * 0.84f
+
+        fun dotCoord(ch: Char): Pair<Float, Float> {
+            val num = ch.digitToInt() - 1
+            val r = num / 3
+            val c = num % 3
+            val x = left + c * ((right - left) / 2f)
+            val y = top + r * ((bottom - top) / 2f)
+            return x to y
+        }
+
+        val path = Path()
+        val (firstX, firstY) = dotCoord(clean[0])
+        path.moveTo(firstX, firstY)
+        for (i in 1 until clean.length) {
+            val (nextX, nextY) = dotCoord(clean[i])
+            path.lineTo(nextX, nextY)
+        }
+
+        val stroke = GestureDescription.StrokeDescription(path, 0L, 500L)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+
+        return suspendCancellableCoroutine { cont ->
+            dispatchGesture(gesture, object : GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    if (cont.isActive) cont.resume(true)
+                }
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    if (cont.isActive) cont.resume(false)
+                }
+            }, null)
+        }
     }
 
     private suspend fun tapKeypadCoordinate(ch: Char, screenWidth: Int, screenHeight: Int) {
@@ -461,12 +519,16 @@ class AuraAccessibilityService : AccessibilityService() {
 
         /** Checks the live system setting, not a cached assumption. */
         fun isEnabled(context: Context): Boolean {
+            if (instance != null) return true
             val expected = ComponentName(context, AuraAccessibilityService::class.java)
             val enabled = Settings.Secure.getString(
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
             ) ?: return false
-            return enabled.split(':').any { ComponentName.unflattenFromString(it) == expected }
+            return enabled.split(':').any { entry ->
+                val cn = ComponentName.unflattenFromString(entry)
+                cn == expected || (cn != null && cn.packageName == context.packageName && cn.className.contains("AuraAccessibilityService"))
+            }
         }
 
         fun serviceInfo(): AccessibilityServiceInfo? = instance?.serviceInfo

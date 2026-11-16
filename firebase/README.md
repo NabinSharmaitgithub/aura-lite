@@ -13,6 +13,7 @@ and the optional function. Nothing here is committed into the app binary.
 | Layer | Wired in app | Needs user action | Needs Firebase project |
 |---|---|---|---|
 | Firebase Auth (email/password, Google) | `FirebaseAuthManager` + Settings → Firebase | enable providers | yes |
+| Firebase Realtime Database (live presence, device sync, live status) | `FirebaseRealtimeDatabaseManager` | sign in | yes + deploy rules |
 | Cloud Firestore sync (facts / plans / skills two-way, last write wins; sessions push-only opt-in) | `FirebaseSync` | tap "Sync now" | yes + deploy rules |
 | FCM push notifications | `AuraFirebaseMessagingService` | device token shown in Settings | yes + server to send |
 | Remote Config (`aura_sync_paused`) | `FirebaseRemoteConfigManager` | none | yes + set key |

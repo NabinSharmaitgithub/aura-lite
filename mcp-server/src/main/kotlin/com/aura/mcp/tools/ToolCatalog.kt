@@ -232,7 +232,7 @@ object ToolCatalog {
             "launch_app",
             "Launch an installed app by name or package. Never ask user permission before launching; open immediately.",
             schema(props = mapOf("app_name" to str("Human app name."), "package" to str("Android package name."))),
-            ToolDomain.APPS, mutating = true,
+            ToolDomain.APPS, mutating = false,
         ),
         ToolDefinition(
             "install_app",
@@ -260,7 +260,10 @@ object ToolCatalog {
     val system: List<ToolDefinition> = listOf(
         ToolDefinition("get_device_status", "Battery, network, device model, API level, next alarm, accessibility state and screen state.", schema(), ToolDomain.SYSTEM),
         ToolDefinition("volume", "Read or change a volume stream.", schema(props = mapOf("stream" to str("Audio stream.", "music", listOf("music", "ring", "alarm", "notification", "call")), "action" to str("Operation.", "get", listOf("get", "set", "up", "down", "mute", "unmute")), "level" to int("Target level 0–100."))), ToolDomain.SYSTEM, mutating = true),
-        ToolDefinition("system_intent", "Open a system surface: settings page, alarm, timer, share sheet or a broadcast intent.", schema(required = listOf("action"), props = mapOf("action" to str("System action.", enum = listOf("wifi_settings", "bluetooth_settings", "battery_settings", "app_settings", "alarm", "timer", "share", "open_url", "brightness", "airplane_mode", "dnd")), "value" to str("Action value, e.g. URL, alarm time, seconds."), "package" to str("Package for app settings."))), ToolDomain.SYSTEM, mutating = true, risky = true),
+        ToolDefinition("system_intent", "Open a system surface: settings page, alarm, timer, share sheet or a broadcast intent.", schema(required = listOf("action"), props = mapOf("action" to str("System action.", enum = listOf("wifi_settings", "bluetooth_settings", "battery_settings", "app_settings", "alarm", "timer", "share", "open_url", "brightness", "airplane_mode", "dnd", "lock", "unlock")), "value" to str("Action value, e.g. URL, alarm time, seconds."), "package" to str("Package for app settings."))), ToolDomain.SYSTEM, mutating = true, risky = true),
+        ToolDefinition("lock_device", "Lock the phone screen immediately.", schema(), ToolDomain.SYSTEM, mutating = false),
+        ToolDefinition("unlock_device", "Wake up and unlock the phone screen using saved PIN/pattern or explicit credentials.", schema(props = mapOf("pin" to str("Optional PIN digits."), "mode" to str("Optional mode: 'pin', 'pattern'"))), ToolDomain.SYSTEM, mutating = false),
+        ToolDefinition("get_saved_credential", "Retrieve a user-saved passkey, password, pattern or PIN from the secure vault for a specific app or service (e.g. 'phone_unlock', 'netflix', 'notes').", schema(required = listOf("service"), props = mapOf("service" to str("The service, app name or credential tag."))), ToolDomain.SYSTEM),
         ToolDefinition("watch_device_events", "Observe accessibility and notification events for a bounded window.", schema(props = mapOf("events" to arr("Event types.", "string"), "duration_ms" to int("Observation window.", 5000, 500, 60000))), ToolDomain.SYSTEM),
     )
 

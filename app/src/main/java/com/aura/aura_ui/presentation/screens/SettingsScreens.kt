@@ -15,6 +15,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -114,8 +115,14 @@ fun MonoSettingsScreen(vm: AuraViewModel, onNavigate: (String) -> Unit) {
         item {
             Text("Settings", style = androidx.compose.material3.MaterialTheme.typography.displaySmall, color = mono.textPrimary)
             Spacer(Modifier.height(16.dp))
+            val email by vm.firebaseEmail.collectAsStateWithLifecycle()
             SurfaceCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigate(Routes.PROFILE) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Box(
                         Modifier.size(46.dp).clip(CircleShape).background(mono.ink),
                         contentAlignment = Alignment.Center,
@@ -125,17 +132,15 @@ fun MonoSettingsScreen(vm: AuraViewModel, onNavigate: (String) -> Unit) {
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(if (settings.userName.isBlank()) "Your profile" else settings.userName, style = androidx.compose.material3.MaterialTheme.typography.titleMedium, color = mono.textPrimary)
-                        Text("Local profile · no account", style = androidx.compose.material3.MaterialTheme.typography.bodySmall, color = mono.textSecondary)
+                        Text(if (!email.isNullOrBlank()) email!! else "Local profile · tap to view", style = androidx.compose.material3.MaterialTheme.typography.bodySmall, color = mono.textSecondary)
                     }
-                    AuraSwitch(checked = settings.darkMode, onCheckedChange = { vm.updateSettings { s -> s.darkMode = it } })
+                    Badge("View →", tone = ChipTone.Idle)
                 }
                 Spacer(Modifier.height(12.dp))
-                AuraTextField(value = name, onValueChange = { name = it }, placeholder = "Name AURA should use")
-                Spacer(Modifier.height(8.dp))
-                SecondaryButton("Save name", {
-                    vm.updateSettings { it.userName = name.trim() }
-                    vm.showNotice("Name saved")
-                })
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Dark theme", style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, color = mono.textPrimary, modifier = Modifier.weight(1f))
+                    AuraSwitch(checked = settings.darkMode, onCheckedChange = { vm.updateSettings { s -> s.darkMode = it } })
+                }
             }
             Spacer(Modifier.height(18.dp))
             GroupedList(header = "Agent") {
@@ -144,6 +149,12 @@ fun MonoSettingsScreen(vm: AuraViewModel, onNavigate: (String) -> Unit) {
             }
             Spacer(Modifier.height(16.dp))
             GroupedList(header = "Control") {
+                GroupedRow(
+                    title = "Security Vault",
+                    subtitle = "Phone unlock PIN/Pattern & App passkeys",
+                    icon = Icons.Outlined.Key,
+                    onClick = { onNavigate(Routes.SETTINGS_VAULT) },
+                )
                 GroupedRow(
                     title = "Permissions health",
                     subtitle = if (permissions.accessibility) "Accessibility is on" else "Action needed",
@@ -155,16 +166,17 @@ fun MonoSettingsScreen(vm: AuraViewModel, onNavigate: (String) -> Unit) {
                 GroupedRow(title = "Search key", subtitle = "Tavily · optional", icon = Icons.Outlined.Search, onClick = { onNavigate(Routes.SETTINGS_TAVILY) }, isLast = true)
             }
             Spacer(Modifier.height(16.dp))
-            GroupedList(header = "Cloud — optional, off by default") {
+            GroupedList(header = "Cloud & Storage") {
+                val email by vm.firebaseEmail.collectAsStateWithLifecycle()
                 GroupedRow(
-                    title = "Firebase",
-                    subtitle = if (vm.firebaseAvailable) "Account sync & diagnostics" else "Not configured on this build",
+                    title = "Firebase Login & Sync",
+                    subtitle = if (email != null) "Signed in as $email" else if (vm.firebaseAvailable) "Sign in or create cloud account" else "Not configured on this build",
                     icon = Icons.Outlined.Cloud,
-                    onClick = { onNavigate(Routes.SETTINGS_FIREBASE) },
+                    onClick = { onNavigate(Routes.AUTH_LOGIN) },
                 )
                 GroupedRow(
-                    title = "Backblaze B2",
-                    subtitle = "Private bucket for agent uploads & exports",
+                    title = "Backblaze B2 (Default Storage)",
+                    subtitle = "Bucket: ${settings.b2BucketName.ifBlank { "aura-lite-storage" }} · Session backup active",
                     icon = Icons.Outlined.CloudUpload,
                     onClick = { onNavigate(Routes.SETTINGS_B2) },
                     isLast = true,
@@ -860,6 +872,10 @@ fun FirebaseScreen(vm: AuraViewModel) {
                 if (email != null) {
                     Spacer(Modifier.height(4.dp))
                     Text("Signed in as $email", style = MonoStyleSmall, color = mono.textSecondary)
+                    if (vm.rtdbAvailable) {
+                        Spacer(Modifier.height(2.dp))
+                        Text("Realtime Database connected", style = MonoStyleSmall, color = mono.successDot)
+                    }
                     Spacer(Modifier.height(10.dp))
                     SecondaryButton("Sign out", { vm.firebaseSignOut() })
                 } else {

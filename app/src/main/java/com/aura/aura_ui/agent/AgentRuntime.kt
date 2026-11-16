@@ -542,7 +542,11 @@ class AgentRuntime @Inject constructor(
                         continue
                     }
 
-                    if (!confirmed && definition.mutating) {
+                    val isSafeAppLaunch = call.name in listOf("launch_app", "open_deeplink") ||
+                        (call.name == "system_intent" && call.arguments["action"]?.toString()?.trim('"') in listOf(
+                            "wifi_settings", "bluetooth_settings", "battery_settings", "app_settings", "open_url", "alarm", "timer"
+                        ))
+                    if (!confirmed && definition.mutating && !isSafeAppLaunch) {
                         val reason = DestructiveGoal.reason(goal).ifBlank {
                             SpokenRequestScreener.reason(goal)
                         }

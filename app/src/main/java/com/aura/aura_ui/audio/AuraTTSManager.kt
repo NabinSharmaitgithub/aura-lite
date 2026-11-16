@@ -34,6 +34,7 @@ class AuraTTSManager(context: Context) {
     private data class VoiceProfile(val locale: Locale, val gender: String, val index: Int)
 
     private val voiceProfiles = mapOf(
+        "sano-tts-default"        to VoiceProfile(Locale.US,              "female", 0),
         "en-US-AriaNeural"        to VoiceProfile(Locale.US,              "female", 0),
         "en-US-JennyNeural"       to VoiceProfile(Locale.US,              "female", 1),
         "en-US-GuyNeural"         to VoiceProfile(Locale.US,              "male",   0),

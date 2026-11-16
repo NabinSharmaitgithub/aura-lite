@@ -30,6 +30,8 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
     }
 
     fun snapshot(): SettingsSnapshot = SettingsSnapshot(
+        initialAuthPrompted = initialAuthPrompted,
+        autoDismissTaskOnComplete = autoDismissTaskOnComplete,
         onboardingComplete = onboardingComplete,
         onboardingStep = onboardingStep,
         userName = userName,
@@ -69,6 +71,10 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
         b2BucketName = b2BucketName,
         b2SessionBackupEnabled = b2SessionBackupEnabled,
     )
+
+    var initialAuthPrompted: Boolean
+        get() = prefs.getBoolean("initial_auth_prompted", false)
+        set(value) = prefs.edit().putBoolean("initial_auth_prompted", value).also { bump() }.apply()
 
     var onboardingComplete: Boolean
         get() = prefs.getBoolean("onboarding_complete", false)
@@ -118,7 +124,7 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
         }
 
     var companionEnabled: Boolean
-        get() = prefs.getBoolean("companion_enabled", false)
+        get() = prefs.getBoolean("companion_enabled", true)
         set(value) {
             prefs.edit().putBoolean("companion_enabled", value).apply()
             bump()
@@ -208,8 +214,15 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
             bump()
         }
 
+    var autoDismissTaskOnComplete: Boolean
+        get() = prefs.getBoolean("auto_dismiss_task_on_complete", true)
+        set(value) {
+            prefs.edit().putBoolean("auto_dismiss_task_on_complete", value).apply()
+            bump()
+        }
+
     var ttsVoice: String
-        get() = prefs.getString("tts_voice", "") ?: ""
+        get() = prefs.getString("tts_voice", "sano-tts-default") ?: "sano-tts-default"
         set(value) {
             prefs.edit().putString("tts_voice", value).apply()
             bump()
@@ -285,25 +298,27 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
             bump()
         }
 
-    /** Backblaze B2 S3 endpoint, e.g. s3.us-east-005.backblazeb2.com (without scheme). */
+    /** Backblaze B2 S3 endpoint, e.g. s3.us-east-005.backblazeb2.com (without scheme). Defaults to provisioned account. */
     var b2Endpoint: String
-        get() = prefs.getString("b2_endpoint", "") ?: ""
+        get() = prefs.getString("b2_endpoint", com.aura.aura_ui.BuildConfig.B2_DEFAULT_ENDPOINT.ifBlank { "s3.us-east-005.backblazeb2.com" })
+            ?: com.aura.aura_ui.BuildConfig.B2_DEFAULT_ENDPOINT.ifBlank { "s3.us-east-005.backblazeb2.com" }
         set(value) {
             prefs.edit().putString("b2_endpoint", value.trim().removePrefix("https://").removePrefix("http://").trimEnd('/')).apply()
             bump()
         }
 
-    /** Bucket name inside the user's B2 account. Not a secret; the key lives in EncryptedSharedPreferences. */
+    /** Bucket name inside the user's B2 account. Defaults to provisioned account aura-lite-storage. */
     var b2BucketName: String
-        get() = prefs.getString("b2_bucket_name", "") ?: ""
+        get() = prefs.getString("b2_bucket_name", com.aura.aura_ui.BuildConfig.B2_DEFAULT_BUCKET.ifBlank { "aura-lite-storage" })
+            ?: com.aura.aura_ui.BuildConfig.B2_DEFAULT_BUCKET.ifBlank { "aura-lite-storage" }
         set(value) {
             prefs.edit().putString("b2_bucket_name", value.trim()).apply()
             bump()
         }
 
-    /** When on, session screenshots are backed up to B2 at the end of a run. Off by default. */
+    /** When on, session screenshots are backed up to B2 at the end of a run. Default true as B2 is the default storage provider. */
     var b2SessionBackupEnabled: Boolean
-        get() = prefs.getBoolean("b2_session_backup_enabled", false)
+        get() = prefs.getBoolean("b2_session_backup_enabled", true)
         set(value) {
             prefs.edit().putBoolean("b2_session_backup_enabled", value).apply()
             bump()
@@ -381,6 +396,8 @@ class AuraSettings @Inject constructor(@ApplicationContext context: Context) {
 }
 
 data class SettingsSnapshot(
+    val initialAuthPrompted: Boolean = false,
+    val autoDismissTaskOnComplete: Boolean = true,
     val onboardingComplete: Boolean,
     val onboardingStep: Int,
     val userName: String,
@@ -416,7 +433,7 @@ data class SettingsSnapshot(
     val firebaseAnalyticsEnabled: Boolean = false,
     val firebaseCrashlyticsEnabled: Boolean = false,
     val firebaseSessionSyncEnabled: Boolean = false,
-    val b2Endpoint: String = "",
-    val b2BucketName: String = "",
-    val b2SessionBackupEnabled: Boolean = false,
+    val b2Endpoint: String = "s3.us-east-005.backblazeb2.com",
+    val b2BucketName: String = "aura-lite-storage",
+    val b2SessionBackupEnabled: Boolean = true,
 )

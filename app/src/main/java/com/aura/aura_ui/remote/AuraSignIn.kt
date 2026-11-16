@@ -90,23 +90,19 @@ class AuraSignIn(private val context: Context) {
         val auth = FirebaseAuth.getInstance()
 
         return try {
-            val anonymous = auth.currentUser?.takeIf { it.isAnonymous }
-            val linkError = if (anonymous == null) {
-                // No anonymous user to upgrade (never registered, or already signed in): sign in
-                // directly.
-                Throwable("no anonymous session")
-            } else {
-                runCatching { anonymous.linkWithCredential(credential).await() }.exceptionOrNull()
+            val authResult = runCatching {
+                val anonymous = auth.currentUser?.takeIf { it.isAnonymous }
+                if (anonymous != null) {
+                    anonymous.linkWithCredential(credential).await()
+                } else {
+                    auth.signInWithCredential(credential).await()
+                }
+            }.getOrElse { linkError ->
+                Log.w(TAG, "linkWithCredential failed: ${linkError.message}; falling back to direct sign-in", linkError)
+                auth.signInWithCredential(credential).await()
             }
 
-            val user = when {
-                anonymous != null && strategyFor(linkError) == Strategy.LINKED -> auth.currentUser
-                anonymous != null && strategyFor(linkError) == Strategy.FAIL -> {
-                    Log.w(TAG, "link failed: ${linkError?.message}", linkError)
-                    return SignInOutcome.Failed(linkError?.message ?: "Sign-in failed.")
-                }
-                else -> auth.signInWithCredential(credential).await().user
-            } ?: return SignInOutcome.Failed("Signed in, but Firebase returned no user.")
+            val user = authResult.user ?: return SignInOutcome.Failed("Signed in, but Firebase returned no user.")
 
             SignInOutcome.Success(
                 uid = user.uid,

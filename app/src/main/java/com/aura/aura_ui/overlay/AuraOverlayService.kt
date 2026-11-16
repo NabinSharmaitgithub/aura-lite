@@ -59,6 +59,7 @@ class AuraOverlayService : Service() {
 
     @Inject lateinit var voice: VoiceEngine
     @Inject lateinit var runtime: AgentRuntime
+    @Inject lateinit var settings: com.aura.aura_ui.data.prefs.AuraSettings
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var windowManager: WindowManager? = null
@@ -411,13 +412,20 @@ class AuraOverlayService : Service() {
                         view?.updateTodoList(formatted)
                     }
                 } else if (state.outcome != null) {
-                    val answer = state.answer ?: "Task finished"
-                    view?.setCompletion(answer)
-                    mainHandler.postDelayed({
-                        if (!runtime.isRunning && notificationJob?.isActive != true) {
-                            stopSelf()
-                        }
-                    }, 4000)
+                    val isSuccess = state.outcome == com.aura.aura_ui.data.session.SessionOutcome.SUCCESS
+                    val baseAnswer = state.answer?.ifBlank {
+                        if (isSuccess) "Task finished." else "Task ended with ${state.outcome}."
+                    } ?: if (isSuccess) "Task finished." else "Task ended with ${state.outcome}."
+                    val speech = if (isSuccess) "$baseAnswer Anything else?" else baseAnswer
+                    voice.speak(speech)
+                    view?.setCompletion(speech)
+                    if (settings.autoDismissTaskOnComplete) {
+                        mainHandler.postDelayed({
+                            if (!runtime.isRunning && notificationJob?.isActive != true) {
+                                stopSelf()
+                            }
+                        }, 6000L)
+                    }
                 }
             }
         }

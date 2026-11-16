@@ -65,6 +65,7 @@ import javax.inject.Inject
 import com.aura.aura_ui.firebase.FirebaseAuthManager
 import com.aura.aura_ui.firebase.FirebaseDiagnostics
 import com.aura.aura_ui.firebase.FirebaseOptional
+import com.aura.aura_ui.firebase.FirebaseRealtimeDatabaseManager
 import com.aura.aura_ui.firebase.FirebaseSync
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -147,11 +148,14 @@ class AuraViewModel @Inject constructor(
     private val search: WebSearchClient,
     private val firebaseAuth: FirebaseAuthManager,
     private val firebaseSync: FirebaseSync,
+    private val firebaseRtdb: FirebaseRealtimeDatabaseManager,
     private val diagnostics: FirebaseDiagnostics,
     private val b2: com.aura.aura_ui.b2.B2Service,
     private val secureKeys: SecureKeyStore,
     private val askUsers: com.aura.aura_ui.agent.AskUserBroker,
     private val evalRecorder: EvalVerdictRecorder,
+    private val meetingManager: com.aura.aura_ui.meeting.MeetingSessionManager,
+    private val llm: com.aura.aura_ui.agent.llm.LlmClient,
 ) : ViewModel() {
 
     val settings: StateFlow<SettingsSnapshot> = prefs.revision
@@ -163,6 +167,64 @@ class AuraViewModel @Inject constructor(
 
     private val _sessions = MutableStateFlow<List<SessionSummary>>(emptyList())
     val recentSessions: StateFlow<List<SessionSummary>> = _sessions.asStateFlow()
+
+    /** Meeting Recording and Summarization State */
+    val meetingState = meetingManager.state
+    val meetingLiveTranscript = meetingManager.liveTranscript
+    val meetingLatestLine = meetingManager.latestLine
+    val meetingSummary = meetingManager.summaryResult
+
+    fun startMeeting(title: String = "Meeting") {
+        meetingManager.startMeeting(title)
+    }
+
+    fun endMeeting() {
+        meetingManager.endMeeting()
+    }
+
+    fun resetMeeting() {
+        meetingManager.reset()
+    }
+
+    fun respondToMeetingSummary(shouldSummarize: Boolean) {
+        viewModelScope.launch {
+            meetingManager.respondToSummary(shouldSummarize) { rawNotes ->
+                val endpoint = currentEndpoint()
+                val key = secureKeys.providerKey(endpoint.id)
+                val model = prefs.llmModelId.ifBlank { endpoint.defaultModelId.orEmpty() }
+                if (!key.isNullOrBlank() && model.isNotBlank()) {
+                    val prompt = "You are an executive assistant. Summarize this meeting transcript concisely with:\n1. Meeting Overview\n2. Key Discussion Points\n3. Decisions Made\n4. Action Items & Follow-ups\n\nTranscript:\n$rawNotes"
+                    runCatching {
+                        val messages = listOf(
+                            com.aura.aura_ui.agent.llm.LlmMessage.system("You are a professional meeting summarizer. Produce structured executive bullet points."),
+                            com.aura.aura_ui.agent.llm.LlmMessage.user(prompt)
+                        )
+                        val sb = StringBuilder()
+                        llm.stream(
+                            endpoint = endpoint,
+                            key = key,
+                            model = model,
+                            messages = messages,
+                            temperature = 0.3f
+                        ).collect { event ->
+                            if (event is com.aura.aura_ui.agent.llm.LlmStreamEvent.TextDelta) {
+                                sb.append(event.text)
+                            }
+                        }
+                        sb.toString().trim().ifBlank { null }
+                    }.getOrNull() ?: fallbackMeetingSummary(rawNotes)
+                } else {
+                    fallbackMeetingSummary(rawNotes)
+                }
+            }
+        }
+    }
+
+    private fun fallbackMeetingSummary(rawNotes: String): String {
+        val lines = rawNotes.lines().filter { it.isNotBlank() }
+        val bulletPoints = lines.takeLast(10).joinToString("\n") { "• " + it.substringAfter("] ").trim() }
+        return "Executive Highlights (${lines.size} items recorded):\n$bulletPoints\n\nAll notes archived on device."
+    }
 
     /** The interrupted goal from the last run that ended abruptly, if any. */
     val interruptedGoal: StateFlow<String?> = MutableStateFlow(sessions.readInterruption()?.second).asStateFlow()
@@ -245,6 +307,16 @@ class AuraViewModel @Inject constructor(
             _firebaseEmail.value = user.email
             _firebaseMessage.value = "Linked Google account. Sync is ready."
         }.onFailure { _firebaseMessage.value = "Google sign-in failed: ${it.message}" }
+    }
+
+    fun firebaseSendPasswordReset(email: String) = viewModelScope.launch {
+        if (_firebaseBusy.value) return@launch
+        _firebaseBusy.value = true
+        val result = withContext(Dispatchers.IO) { firebaseAuth.sendPasswordReset(email) }
+        _firebaseBusy.value = false
+        result.onSuccess {
+            _firebaseMessage.value = "Password reset email sent to $email."
+        }.onFailure { _firebaseMessage.value = "Password reset failed: ${it.message}" }
     }
 
     fun refreshFirebaseState() {
@@ -373,6 +445,7 @@ class AuraViewModel @Inject constructor(
     val firebaseEmail: StateFlow<String?> = _firebaseEmail.asStateFlow()
 
     val firebaseAvailable: Boolean get() = FirebaseOptional.available(context)
+    val rtdbAvailable: Boolean get() = firebaseRtdb.isAvailable
 
     private val _models = MutableStateFlow<List<ModelInfo>>(emptyList())
     val models: StateFlow<List<ModelInfo>> = _models.asStateFlow()
@@ -423,6 +496,12 @@ class AuraViewModel @Inject constructor(
         viewModelScope.launch {
             restricted.revision.collect { _restrictedPackages.value = restricted.blockedPackages() }
         }
+        firebaseAuth.observe { user ->
+            _firebaseEmail.value = user?.email
+            if (user != null) {
+                firebaseRtdb.attachPresence(android.os.Build.MODEL ?: "android")
+            }
+        }
     }
 
     // ── Settings ────────────────────────────────────────────────────────────────
@@ -438,6 +517,10 @@ class AuraViewModel @Inject constructor(
         if (prefs.ttsVoice != beforeVoice || prefs.ttsPitch != beforePitch || prefs.ttsRate != beforeRate) {
             runCatching { voice.refreshTtsVoice() }
         }
+    }
+
+    fun dismissInitialAuth() {
+        prefs.initialAuthPrompted = true
     }
 
     fun setOnboardingStep(step: Int) {
@@ -456,6 +539,15 @@ class AuraViewModel @Inject constructor(
 
     fun submit(goal: String, entryMode: RunEntryMode = RunEntryMode.FRESH) {
         if (goal.isBlank()) return
+        val lower = goal.trim().lowercase()
+        if (lower.contains("meeting is over") || lower.contains("end meeting") || lower.contains("stop meeting")) {
+            endMeeting()
+            return
+        }
+        if (lower.contains("summarize meeting") || lower.contains("record meeting") || lower.contains("start meeting") || lower.contains("take meeting notes") || lower == "meeting") {
+            startMeeting(goal.trim())
+            return
+        }
         AssistantForegroundService.submit(context, goal.trim(), entryMode)
         viewModelScope.launch {
             kotlinx.coroutines.delay(600)
@@ -502,6 +594,60 @@ class AuraViewModel @Inject constructor(
 
     fun denyConfirmation() {
         confirmation.value?.let { confirmations.respond(it.id, false) }
+    }
+
+    // ── Security Vault: Lock, PIN, Pattern & App Credentials ─────────────────
+
+    val phoneUnlockType = MutableStateFlow(secureKeys.phoneUnlockType)
+    val phoneUnlockSecret = MutableStateFlow(secureKeys.phoneUnlockSecret)
+    val vaultItems = MutableStateFlow(secureKeys.getVaultItems())
+
+    fun savePhoneUnlock(type: String, secret: String) {
+        secureKeys.savePhoneUnlock(type, secret)
+        phoneUnlockType.value = secureKeys.phoneUnlockType
+        phoneUnlockSecret.value = secureKeys.phoneUnlockSecret
+        showNotice("Phone unlock $type saved securely")
+    }
+
+    fun clearPhoneUnlock() {
+        secureKeys.clearPhoneUnlock()
+        phoneUnlockType.value = "none"
+        phoneUnlockSecret.value = null
+        showNotice("Phone unlock cleared")
+    }
+
+    fun saveVaultItem(item: com.aura.aura_ui.data.prefs.VaultItem) {
+        secureKeys.saveVaultItem(item)
+        vaultItems.value = secureKeys.getVaultItems()
+        showNotice("Saved credential for ${item.service}")
+    }
+
+    fun deleteVaultItem(id: String) {
+        secureKeys.removeVaultItem(id)
+        vaultItems.value = secureKeys.getVaultItems()
+        showNotice("Removed credential")
+    }
+
+    fun testLockPhone() {
+        val service = com.aura.aura_ui.accessibility.AuraAccessibilityService.instance
+        if (service != null) {
+            val ok = service.lockDevice()
+            if (ok) showNotice("Phone locked") else showNotice("Lock screen action not supported")
+        } else {
+            showNotice("Accessibility service is off. Turn it on to lock screen.")
+        }
+    }
+
+    fun testUnlockPhone() {
+        viewModelScope.launch {
+            val service = com.aura.aura_ui.accessibility.AuraAccessibilityService.instance
+            if (service != null) {
+                val ok = service.unlockDevice()
+                if (ok) showNotice("Phone unlocked") else showNotice("Could not unlock phone")
+            } else {
+                showNotice("Accessibility service is off. Turn it on to unlock screen.")
+            }
+        }
     }
 
     // ── Providers ────────────────────────────────────────────────────────────────

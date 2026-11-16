@@ -15,6 +15,11 @@ object Routes {
     const val AGENT_VOICE = "agent/voice"
     const val AGENT_WAKE_WORD = "agent/wakeword"
 
+    const val AUTH_LOGIN = "auth/login"
+    const val LOGIN = AUTH_LOGIN
+    const val PROFILE = "profile"
+    const val SETTINGS_VAULT = "settings/vault"
+
     const val SETTINGS_B2 = "settings/backblaze"
     const val SETTINGS_FIREBASE = "settings/firebase"
     const val SETTINGS_TAVILY = "settings/tavily"
@@ -47,6 +52,9 @@ object Routes {
         AGENT_COMPANION to "Companion",
         AGENT_VOICE to "Voice",
         AGENT_WAKE_WORD to "Wake Word",
+        AUTH_LOGIN to "Sign in",
+        PROFILE to "Profile",
+        SETTINGS_VAULT to "Security Vault",
         SETTINGS_B2 to "Backblaze B2",
         SETTINGS_FIREBASE to "Firebase",
         SETTINGS_TAVILY to "Search key",

@@ -173,6 +173,21 @@ class SystemControlsHelper @Inject constructor(@ApplicationContext private val c
             "brightness" -> Intent(Settings.ACTION_DISPLAY_SETTINGS)
             "airplane_mode" -> Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
             "dnd" -> Intent(Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS)
+            "lock" -> {
+                val service = AuraAccessibilityService.instance
+                val ok = service?.lockDevice() ?: false
+                return if (ok) ToolResult.ok(changed = true, observed = kotlinx.serialization.json.buildJsonObject { put("status", kotlinx.serialization.json.JsonPrimitive("locked")) })
+                else ToolResult.fail(ToolError.internal("Failed to lock device. Accessibility service required."))
+            }
+            "unlock" -> {
+                val service = AuraAccessibilityService.instance
+                return if (service != null) {
+                    kotlinx.coroutines.runBlocking { service.unlockDevice(value) }
+                    ToolResult.ok(changed = true, observed = kotlinx.serialization.json.buildJsonObject { put("status", kotlinx.serialization.json.JsonPrimitive("unlocked")) })
+                } else {
+                    ToolResult.fail(ToolError.internal("Accessibility service not connected"))
+                }
+            }
             else -> return ToolResult.fail(ToolError("invalid_args", "Unknown system action $action"))
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

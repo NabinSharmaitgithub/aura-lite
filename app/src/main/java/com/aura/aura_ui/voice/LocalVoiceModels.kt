@@ -61,6 +61,17 @@ object LocalVoiceModels {
         approxMb = 64,
     )
 
+    /**
+     * SanoTTS: Ultra-lightweight on-device neural TTS (~2MB) by Ampixa Labs.
+     * Fast, efficient edge speech model.
+     */
+    fun sanoTts() = Model(
+        dirName = "sanotts-nano",
+        repo = "ampixa/sanoTTS",
+        files = listOf("sanotts-nano.onnx", "tokens.txt") + ESPEAK_EN,
+        approxMb = 2,
+    )
+
     // ponytail: base (287 MB) for accuracy; csukuangfj/sherpa-onnx-moonshine-tiny-en-int8 is 124 MB if size matters.
     val MOONSHINE = Model(
         dirName = "moonshine-base-en-int8",

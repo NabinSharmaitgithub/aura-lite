@@ -64,7 +64,7 @@ class DeferredTools(registered: Collection<String>) {
             "read_screen", "tap", "type_text", "press_enter", "press_key",
             "scroll", "swipe", "launch_app", "end_session",
             "set_value",
-            "system_intent", "media_control", "read_notifications", "resolve_contact", "web_search",
+            "system_intent", "lock_device", "unlock_device", "get_saved_credential", "media_control", "read_notifications", "resolve_contact", "web_search",
             // record_finding is core rather than a menu line on purpose: proof is recorded the
             // moment each item is read, and a tool load standing between reading and recording is
             // exactly the friction that ends with the harvest summarized from memory instead.

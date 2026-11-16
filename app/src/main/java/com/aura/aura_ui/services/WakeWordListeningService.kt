@@ -112,7 +112,7 @@ class WakeWordListeningService : Service() {
 
         scope.launch(Dispatchers.Main) {
             // Show assistant overlay and listen via Figma wake screen
-            if (settings.companionEnabled && android.provider.Settings.canDrawOverlays(this@WakeWordListeningService)) {
+            if (android.provider.Settings.canDrawOverlays(this@WakeWordListeningService)) {
                 AuraOverlayService.showAndListen(this@WakeWordListeningService, source = "wake_word")
             } else {
                 AssistantForegroundService.listen(this@WakeWordListeningService)

@@ -115,6 +115,7 @@ webrtc = { module = "io.getstream:stream-webrtc-android", version.ref = "webrtc"
 
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
 firebase-auth = { module = "com.google.firebase:firebase-auth" }
+firebase-database = { module = "com.google.firebase:firebase-database" }
 firebase-firestore = { module = "com.google.firebase:firebase-firestore" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 firebase-remote-config = { module = "com.google.firebase:firebase-config" }
